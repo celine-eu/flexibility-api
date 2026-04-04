@@ -1,0 +1,50 @@
+volumes:
+  pgdata:
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: flexibility
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d flexibility"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  api:
+    command: >-
+      sh -lc "uv run alembic upgrade head && uv run uvicorn celine.flexibility.main:create_app --factory --host 0.0.0.0 --port 8017 --reload"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8017:8017"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/flexibility
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - ./policies:/app/policies
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8017/health').read()\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "keycloak.celine.localhost:host-gateway"

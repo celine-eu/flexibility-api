@@ -1,0 +1,45 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install dependencies
+    cmds:
+      - uv sync
+
+  run:
+    desc: Run development server
+    cmds:
+      - uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
+
+  debug:
+    desc: Run development server with debugger
+    cmds:
+      - DEBUG_ATTACH=1 uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
+
+  test:
+    desc: Run tests
+    cmds:
+      - uv run pytest -- {{.CLI_ARGS}}
+
+  alembic:migrate:
+    desc: Run migrations (upgrade head)
+    cmds:
+      - uv run alembic upgrade head
+
+  alembic:sync-model:
+    desc: Autogenerate a new revision
+    cmds:
+      - uv run alembic revision --autogenerate -m "{{.MSG}}"
+    vars:
+      MSG: "update model"
+
+  alembic:reset:
+    desc: Downgrade to base (wipe schema)
+    cmds:
+      - uv run alembic downgrade base
+
+  release:
+    cmds:
+      - uv run semantic-release -v version --no-vcs-release
+      - git push
+      - git push --tags
