@@ -20,6 +20,9 @@ dependencies = [
 
 [tool.uv]
 
+[tool.uv.sources]
+celine-sdk = { path = "../celine-sdk" }
+
 [dependency-groups]
 dev = [
   "python-semantic-release>=10.5.3",
