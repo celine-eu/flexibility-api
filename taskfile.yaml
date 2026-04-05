@@ -14,7 +14,7 @@ tasks:
   debug:
     desc: Run development server with debugger
     cmds:
-      - DEBUG_ATTACH=1 uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
+      - LOG_LEVEL=DEBUG DEBUG_ATTACH=nowait DEBUG_PORT=48017 uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
 
   test:
     desc: Run tests
