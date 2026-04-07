@@ -3,7 +3,7 @@
 Triggered when the rec_flexibility_flow pipeline completes.
 
 Fetches rec_settlement_1h via DTClient community domain to get actual
-per-device virtual consumption kWh for the specific commitment window,
+per-device consumption kWh for the specific commitment window,
 then settles any open commitments whose window falls within that period.
 
 The community domain fetcher is used (not participant) because settlement runs
@@ -15,8 +15,8 @@ dataset.query scope). svc-flexibility carries that scope so the token chain
 flexibility-api → DT → dataset-api is fully authorised.
 
 reward_points_actual derives from rec_settlement_1h which is computed from
-actual measured virtual self-consumption kWh at 15-min granularity, rolled up
-to hourly. Points = round(sum(virtual_consumption_kwh) × 10).
+actual measured consumption kWh at 15-min granularity (×0.25 kW→kWh), rolled
+up to hourly. Points = round(sum(consumption_kwh) × 10).
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ async def settle_completed_windows(
     """Settle commitments whose window closed on period_date.
 
     Fetches rec_settlement_1h for each commitment's exact window from DTClient
-    community domain, sums virtual_consumption_kwh, and computes
+    community domain, sums consumption_kwh, and computes
     reward_points_actual = round(sum × 10).
 
     Returns the count of settled commitments.
@@ -117,11 +117,11 @@ async def settle_completed_windows(
                 )
                 continue
 
-            actual_virtual_kwh = sum(
-                _float(item.to_dict().get("virtual_consumption_kwh"))
+            actual_kwh = sum(
+                _float(item.to_dict().get("consumption_kwh"))
                 for item in result.items
             )
-            actual_points = round(actual_virtual_kwh * 10)
+            actual_points = round(actual_kwh * 10)
 
             row.status = "settled"
             row.reward_points_actual = actual_points
@@ -131,7 +131,7 @@ async def settle_completed_windows(
                 "Settled commitment=%s community=%s device=%s window=%s–%s "
                 "actual_kwh=%.3f pts=%d",
                 row.id, community_id, device_id, window_start, window_end,
-                actual_virtual_kwh, actual_points,
+                actual_kwh, actual_points,
             )
 
     if settled:
