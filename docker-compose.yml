@@ -21,16 +21,7 @@ services:
         condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:securepassword123@host.docker.internal:15432/flexibility
-    command: .venv/bin/alembic upgrade head
-    # volumes:
-    # - ./src:/app/src
-    # - ./alembic:/app/alembic
-    # - ./alembic.ini:/app/alembic.ini
+    command: alembic upgrade head
 
   api:
     build:
@@ -42,23 +33,8 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:securepassword123@host.docker.internal:15432/flexibility
-    volumes:
-      - ./src:/app/src
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
-      - ./policies:/app/policies
-    command: uv run uvicorn celine.flexibility.main:create_app --factory --host 0.0.0.0 --port 8017 --reload
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8017/health'').read()"',
-        ]
+      test: ["CMD", "curl", "-sf", "http://localhost:8017/health"]
       interval: 5s
       timeout: 3s
       retries: 30

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.12-slim AS base
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,20 +8,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (curl kept for healthcheck probes)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:${PATH}"
+# Install uv from the official image — pin the tag for reproducible builds
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy dependency manifests
-COPY pyproject.toml README.md ./
+# Copy dependency manifests (lock file required for --frozen)
+COPY pyproject.toml uv.lock README.md ./
 
-# Install dependencies (no dev group)
-RUN uv sync --no-editable --no-dev
+# Install production dependencies; --frozen ensures the lock file is respected
+RUN uv sync --frozen --no-editable --no-dev --no-cache
 
 # Copy application source
 COPY src ./src
@@ -35,4 +34,5 @@ USER appuser
 
 EXPOSE 8017
 
-CMD ["uv", "run", "uvicorn", "celine.flexibility.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8017"]
+# uvicorn is on PATH via UV_SYSTEM_PYTHON=1 (/usr/local/bin/uvicorn)
+CMD ["uvicorn", "celine.flexibility.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8017"]
