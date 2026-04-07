@@ -4,7 +4,8 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_SYSTEM_PYTHON=1
+    UV_SYSTEM_PYTHON=1 \
+    PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
@@ -19,14 +20,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency manifests (lock file required for --frozen)
 COPY pyproject.toml uv.lock README.md ./
 
-# Install production dependencies; --frozen ensures the lock file is respected
-RUN uv sync --frozen --no-editable --no-dev --no-cache
+# Install dependencies only — project source not needed yet, preserves layer cache
+RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 # Copy application source
 COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY policies ./policies
+
+# Install the project itself (non-editable wheel build)
+RUN uv sync --frozen --no-editable --no-dev --no-cache
 
 # Non-root user
 RUN useradd -u 10001 -m appuser
