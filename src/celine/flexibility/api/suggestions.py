@@ -209,10 +209,32 @@ async def respond_to_suggestion(
     now = datetime.now(timezone.utc)
     reward_points = body.reward_points if body.reward_points is not None else 10
 
+    # Parse window timestamps (same logic for both accepted and rejected paths)
+    try:
+        window_start = datetime.fromisoformat(body.period_start) if body.period_start else now
+        window_end = datetime.fromisoformat(body.period_end) if body.period_end else now + timedelta(hours=1)
+    except (ValueError, TypeError):
+        window_start = now
+        window_end = now + timedelta(hours=1)
+
     if body.response == "declined":
+        # Persist rejected decisions so acceptance rate is trackable in analytics.
+        # community_id and device_id are not resolved (no DT call, no MQTT publish).
+        commitment_row = FlexibilityCommitment(
+            user_id=user.sub,
+            suggestion_id=suggestion_id,
+            suggestion_type="shift-consumption",
+            period_start=window_start,
+            period_end=window_end,
+            status="rejected",
+            reward_points_estimated=reward_points,
+        )
+        async with db as session:
+            session.add(commitment_row)
+            await session.commit()
         return SuggestionRespondResponse(
             commitment_id=None,
-            status="declined",
+            status="rejected",
             reward_points_estimated=0,
         )
 
@@ -239,14 +261,6 @@ async def respond_to_suggestion(
                     break
     except Exception as exc:
         logger.warning("Failed to fetch assets for user=%s: %s", user.sub, exc)
-
-    # Parse window timestamps
-    try:
-        window_start = datetime.fromisoformat(body.period_start) if body.period_start else now
-        window_end = datetime.fromisoformat(body.period_end) if body.period_end else now + timedelta(hours=1)
-    except (ValueError, TypeError):
-        window_start = now
-        window_end = now + timedelta(hours=1)
 
     # Persist the commitment
     commitment_row = FlexibilityCommitment(

@@ -49,6 +49,12 @@ reason := "user accessing own commitment" if {
 
 allow if {
     is_service
+    input.action.name == "export"
+    has_scope("flexibility.commitments.export")
+}
+
+allow if {
+    is_service
     input.action.name in {"read", "service"}
     has_any_scope(["flexibility.read", "flexibility.admin"])
 }

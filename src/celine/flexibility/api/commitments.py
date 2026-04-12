@@ -159,6 +159,28 @@ async def get_pending(
     return [_row_to_out(r) for r in rows]
 
 
+@router.get("/export", response_model=list[CommitmentOut])
+async def export_commitments(
+    _svc: ServiceDep,
+    db: DbDep,
+    created_after: Optional[datetime] = Query(default=None),
+) -> list[CommitmentOut]:
+    """Bulk export all commitments for pipeline mirroring.
+
+    Service only. Requires flexibility.commitments.export scope.
+    Returns all statuses (committed, settled, rejected, cancelled).
+    created_after filters by committed_at (ISO datetime, UTC).
+    """
+    async with db as session:
+        q = select(FlexibilityCommitment).order_by(
+            FlexibilityCommitment.committed_at.asc()
+        )
+        if created_after:
+            q = q.where(FlexibilityCommitment.committed_at >= created_after)
+        rows = (await session.execute(q)).scalars().all()
+    return [_row_to_out(r) for r in rows]
+
+
 @router.patch("/{commitment_id}/settle", response_model=CommitmentOut)
 async def settle_commitment(
     commitment_id: uuid.UUID,
