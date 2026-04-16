@@ -1,6 +1,6 @@
 [project]
 name = "celine-flexibility-api"
-version = "1.0.1"
+version = "1.1.0"
 description = "CELINE Flexibility API — commitment store for voluntary and automated load-shifting"
 readme = "README.md"
 requires-python = ">=3.12"
