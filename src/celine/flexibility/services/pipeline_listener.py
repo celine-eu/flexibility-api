@@ -40,6 +40,11 @@ def get_broker() -> MqttBroker | None:
     return _broker
 
 
+def get_nudging_client() -> NudgingAdminClient | None:
+    """Return the nudging admin client instance (available after startup)."""
+    return _nudging_client
+
+
 def _make_oidc_provider(scope: str | None) -> OidcClientCredentialsProvider:
     return OidcClientCredentialsProvider(
         base_url=settings.oidc.base_url,

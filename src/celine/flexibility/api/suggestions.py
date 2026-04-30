@@ -32,7 +32,8 @@ from celine.flexibility.schemas.suggestion import (
     SuggestionRespondResponse,
 )
 from celine.flexibility.security.auth import get_raw_token
-from celine.flexibility.services.pipeline_listener import get_broker
+from celine.flexibility.services.pipeline_listener import get_broker, get_nudging_client
+from celine.flexibility.services.schedule_nudge import schedule_pre_window_nudge
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +235,7 @@ async def respond_to_suggestion(
             await session.commit()
         return SuggestionRespondResponse(
             commitment_id=None,
-            status="rejected",
+            status="declined",
             reward_points_estimated=0,
         )
 
@@ -281,6 +282,26 @@ async def respond_to_suggestion(
 
     # Publish flexibility.committed to MQTT (fire-and-forget; commitment is already persisted)
     await _publish_committed(commitment_row, community_id, device_id)
+
+    # Schedule a pre-window nudge (fire-and-forget)
+    nudging_client = get_nudging_client()
+    if nudging_client is not None:
+        try:
+            await schedule_pre_window_nudge(
+                nudging_client,
+                commitment_id=str(commitment_row.id),
+                user_id=user.sub,
+                community_id=community_id,
+                suggestion_id=suggestion_id,
+                window_start=window_start,
+                window_end=window_end,
+                reward_points_estimated=reward_points,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to schedule pre-window nudge for commitment=%s: %s",
+                commitment_row.id, exc,
+            )
 
     return SuggestionRespondResponse(
         commitment_id=commitment_row.id,
