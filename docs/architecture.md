@@ -37,6 +37,7 @@ Alembic manages migrations.
 ## Settlement
 
 `services/settlement.py` processes commitment settlement:
+
 1. Checks if the commitment window has passed
 2. Calculates points based on fulfillment
 3. Updates commitment status to `settled`
