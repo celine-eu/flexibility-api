@@ -12,7 +12,7 @@ from settings using OidcClientCredentialsProvider for service-to-service auth.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from celine.sdk.auth import OidcClientCredentialsProvider
 from celine.sdk.broker import MqttBroker, MqttConfig, PipelineRunEvent, ReceivedMessage
@@ -129,12 +129,12 @@ async def on_pipeline_run(msg: ReceivedMessage) -> None:
     elif event.flow == "rec-flexibility-flow":
         if _dt_client is None:
             return
-        # Settle commitments for the period that just completed.
-        # Use the event timestamp to determine which date to settle; fall back to today.
+        # Settle yesterday's commitments — the pipeline runs after midnight
+        # and yesterday's windows now have metered data available.
         try:
-            period_date = datetime.fromisoformat(event.timestamp).date()
+            period_date = datetime.fromisoformat(event.timestamp).date() - timedelta(days=1)
         except (ValueError, AttributeError):
-            period_date = datetime.now(timezone.utc).date()
+            period_date = datetime.now(timezone.utc).date() - timedelta(days=1)
 
         async with SessionLocal() as session:
             count = await settle_completed_windows(session, _dt_client, period_date)

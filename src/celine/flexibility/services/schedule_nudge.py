@@ -1,7 +1,7 @@
 """Schedule a pre-window nudge when a user accepts a flexibility suggestion.
 
 Posts to the nudging API's /admin/scheduled-events so the notification fires
-~15 minutes before the flexibility window opens.  If the window is already
+~30 minutes before the flexibility window opens.  If the window is already
 imminent (trigger_at in the past), falls back to an immediate ingest_event().
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from celine.flexibility.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_PRE_WINDOW_MINUTES = 15
+_PRE_WINDOW_MINUTES = 30
 
 
 def _as_utc(dt: datetime) -> datetime:
