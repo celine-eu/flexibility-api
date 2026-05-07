@@ -2,6 +2,51 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-05-07)
+
+### Chores
+
+- Update docs
+  ([`38ee861`](https://github.com/celine-eu/flexibility-api/commit/38ee861314fa7d46098302f46b62697ba7f67f9f))
+
+- Update docs
+  ([`bee0a02`](https://github.com/celine-eu/flexibility-api/commit/bee0a02cf22c725864a427d00cd810bf0ac32ed7))
+
+- Upgrade celine-sdk to 1.11.0
+  ([`fa3414d`](https://github.com/celine-eu/flexibility-api/commit/fa3414dd8622c0c4c7cbb331109f41297ff8a6a9))
+
+- Upgrade celine-sdk to 1.12.0
+  ([`4c33c68`](https://github.com/celine-eu/flexibility-api/commit/4c33c683d425d3a612263d91f91d418586e76269))
+
+- Upgrade celine-sdk to 1.12.1
+  ([`a18f2d4`](https://github.com/celine-eu/flexibility-api/commit/a18f2d43f92ad9ef953f6e100b13744b0074e1e9))
+
+- **deps**: Bump fastapi from 0.135.3 to 0.136.1
+  ([`1d8c044`](https://github.com/celine-eu/flexibility-api/commit/1d8c0443197bc78a6cc2f78b7fe01b0dabba6a19))
+
+- **deps**: Bump pydantic from 2.12.5 to 2.13.3
+  ([`e652a72`](https://github.com/celine-eu/flexibility-api/commit/e652a727604c33dc564ef2061c5cdb91bef99ac3))
+
+- **deps**: Bump pydantic-settings from 2.13.1 to 2.14.0
+  ([`f15382c`](https://github.com/celine-eu/flexibility-api/commit/f15382c819d4506b051f655748585598081e1fd5))
+
+- **deps**: Update uvicorn[standard] requirement
+  ([`ef84fcb`](https://github.com/celine-eu/flexibility-api/commit/ef84fcba5261c3c26c727f9fa4afa664e8868df7))
+
+- **deps-dev**: Bump pytest
+  ([`e07a636`](https://github.com/celine-eu/flexibility-api/commit/e07a636041986d6b79732bce8e1e26ec542394c2))
+
+### Continuous Integration
+
+- Bump the actions group across 1 directory with 3 updates
+  ([`1f4da53`](https://github.com/celine-eu/flexibility-api/commit/1f4da53b5babecb81ffdf50d36b916a9036b2751))
+
+### Features
+
+- Schedule nudge on pipeline run
+  ([`977bb00`](https://github.com/celine-eu/flexibility-api/commit/977bb00d61a0c19af6d7144fcb158c17d7212a83))
+
+
 ## v1.1.0 (2026-04-16)
 
 ### Chores
