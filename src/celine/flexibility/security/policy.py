@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from celine.sdk.auth.jwt import extract_groups
 from fastapi import Request
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class AccessPolicy:
                 "id": user.sub,
                 "is_service": user.is_service_account,
                 "scopes": (user.claims.get("scope") or "").split(),
-                "groups": user.claims.get("groups", []),
+                "groups": extract_groups(user.claims),
             },
         }
         return await self._evaluate("celine/flexibility/access", input_data)
