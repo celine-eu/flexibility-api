@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-07-02)
+
+### Bug Fixes
+
+- Use groups extraction from sdk
+  ([`6979000`](https://github.com/celine-eu/flexibility-api/commit/697900089cb178af96791cf02edfe908c5ee2b96))
+
+### Chores
+
+- Upgrade celine-sdk to 1.13.0
+  ([`c9350da`](https://github.com/celine-eu/flexibility-api/commit/c9350da88882a97892c48ba567766233786e2b7a))
+
+
 ## v1.2.0 (2026-05-07)
 
 ### Chores
