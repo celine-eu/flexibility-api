@@ -16,9 +16,13 @@ class SuggestionItem(BaseModel):
     to_is_tomorrow: bool
     to_period: str         # i18n key for the target window
     to_time: str           # e.g. "10:30"
-    impact_kwh_estimated: float
-    reward_points: int
-    confidence: float
+    # Personal enrichment — None when this member's device has no usable forecast
+    # for the window (visibility is community-driven, never gated on these).
+    impact_kwh_estimated: float | None = None
+    reward_points: int | None = None
+    # Community surplus budget for the window (kWh) — always present.
+    community_kwh: float = 0.0
+    confidence: float = 0.75
 
 
 class SuggestionRespondRequest(BaseModel):

@@ -13,7 +13,7 @@ and the pipeline_listener reminder loop) can pick it up.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -39,8 +39,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/suggestions", tags=["suggestions"])
 
-_MIN_IMPACT_KWH = 0.5
-_MAX_SUGGESTIONS = 2
+_MAX_SUGGESTIONS = 2  # ranking cap — visibility is community-driven, never gated on personal impact
 
 
 # ── period helpers (mirrored from celine-webapp) ──────────────────────────────
@@ -96,6 +95,67 @@ def _get_dt_client(raw_token: str) -> DTClient:
     )
 
 
+def _build_suggestions(
+    community_windows: list[dict[str, Any]],
+    enrichment: dict[tuple[datetime, datetime], dict[str, Any]],
+    committed_ids: set[str],
+    today_date: date,
+) -> list[SuggestionItem]:
+    """Map community surplus windows to suggestions, decorated with personal enrichment.
+
+    Args:
+        community_windows: Rows from the community rec_flexibility_windows fetcher.
+        enrichment: Per-device rows keyed by (window_start, window_end).
+        committed_ids: suggestion_ids this user already committed to.
+        today_date: Reference date for today/tomorrow labelling.
+
+    Returns:
+        Ranked suggestions: enriched windows first (personal impact desc),
+        then by community surplus, capped at _MAX_SUGGESTIONS.
+    """
+    items: list[SuggestionItem] = []
+    for d in community_windows:
+        try:
+            window_id = str(d.get("_id", ""))
+            if not window_id or window_id in committed_ids:
+                continue
+            window_start = datetime.fromisoformat(str(d["window_start"]))
+            window_end = datetime.fromisoformat(str(d["window_end"]))
+            enr = enrichment.get((window_start, window_end))
+            impact = _float(enr.get("estimated_kwh")) if enr else None
+            reward = int(enr.get("reward_points_estimated") or 0) if enr else None
+            is_tomorrow = window_start.date() > today_date
+            from_period, from_clock = _shift_from(window_start, today_date)
+            window_clock = f"{window_start.strftime('%H:%M')}–{window_end.strftime('%H:%M')}"
+            items.append(
+                SuggestionItem(
+                    id=window_id,
+                    suggestion_type="shift-consumption",
+                    period_start=window_start.isoformat(),
+                    period_end=window_end.isoformat(),
+                    from_period=from_period,
+                    clock_range=from_clock if from_period else window_clock,
+                    to_is_tomorrow=is_tomorrow,
+                    to_period=_period_from_hour(window_start.hour),
+                    to_time=window_start.strftime("%H:%M"),
+                    impact_kwh_estimated=impact,
+                    reward_points=reward,
+                    community_kwh=_float(d.get("community_kwh")),
+                    confidence=_float((enr or d).get("confidence"), 0.75),
+                )
+            )
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.warning("Skipping malformed flexibility window: %s", exc)
+    items.sort(
+        key=lambda s: (
+            s.impact_kwh_estimated is None,
+            -(s.impact_kwh_estimated or 0.0),
+            -s.community_kwh,
+        )
+    )
+    return items[:_MAX_SUGGESTIONS]
+
+
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[SuggestionItem])
@@ -112,22 +172,57 @@ async def list_suggestions(
     today_dt = datetime.now(timezone.utc).date()
     dt = _get_dt_client(get_raw_token(request))
 
-    # Resolve device_id — required for per-device flexibility windows
-    device_id = ""
+    # Resolve community_id — a community surplus window is visible to every member.
+    # Same resolution pattern as respond_to_suggestion below.
+    community_id = ""
     try:
-        assets = await dt.participants.assets(user.sub)
-        if assets and assets.items:
-            for asset in assets.items:
-                if asset.sensor_id:
-                    device_id = asset.sensor_id
-                    break
-    except Exception as exc:
-        logger.warning("Failed to fetch assets for user=%s: %s", user.sub, exc)
+        from celine.sdk.openapi.dt.models import UserMembershipSchema
 
-    if not device_id:
+        participant = await dt.participants.profile(user.sub)
+        _m = participant.membership
+        if isinstance(_m, UserMembershipSchema):
+            community_id = _m.community.key
+    except Exception as exc:
+        logger.warning("Failed to fetch participant profile for user=%s: %s", user.sub, exc)
+
+    if not community_id:
         return []
 
-    # Filter out suggestion_ids already committed by this user
+    try:
+        res = await dt.communities.fetch_values(
+            community_id=community_id,
+            fetcher_id="rec_flexibility_windows",
+        )
+    except Exception as exc:
+        logger.warning("community flexibility windows fetch failed for user=%s: %s", user.sub, exc)
+        return []
+
+    if not res or res.count == 0:
+        return []
+
+    # Personal enrichment — best effort; failure must never hide the community event.
+    enrichment: dict[tuple[datetime, datetime], dict[str, Any]] = {}
+    try:
+        assets = await dt.participants.assets(user.sub)
+        device_id = next(
+            (a.sensor_id for a in (assets.items if assets else []) if a.sensor_id), ""
+        )
+        if device_id:
+            dev_res = await dt.participants.fetch_values(
+                participant_id=user.sub,
+                fetcher_id="rec_flexibility_windows",
+                payload={"device_id": device_id},
+            )
+            for item in dev_res.items if dev_res else []:
+                d = item.to_dict()
+                key = (
+                    datetime.fromisoformat(str(d["window_start"])),
+                    datetime.fromisoformat(str(d["window_end"])),
+                )
+                enrichment[key] = d
+    except Exception as exc:
+        logger.warning("Per-device enrichment unavailable for user=%s: %s", user.sub, exc)
+
     async with db as session:
         committed_ids: set[str] = set(
             (
@@ -140,54 +235,9 @@ async def list_suggestions(
             ).scalars().all()
         )
 
-    try:
-        res = await dt.participants.fetch_values(
-            participant_id=user.sub,
-            fetcher_id="rec_flexibility_windows",
-            payload={"device_id": device_id},
-        )
-    except Exception as exc:
-        logger.warning("rec_flexibility_windows fetch failed for user=%s: %s", user.sub, exc)
-        return []
-
-    if not res or res.count == 0:
-        return []
-
-    result: list[SuggestionItem] = []
-    for item in res.items:
-        d: dict[str, Any] = item.to_dict()
-        try:
-            window_id = str(d.get("_id", ""))
-            if window_id in committed_ids:
-                continue
-            impact = _float(d.get("estimated_kwh"))
-            if impact < _MIN_IMPACT_KWH:
-                continue
-            window_start = datetime.fromisoformat(str(d["window_start"]))
-            window_end = datetime.fromisoformat(str(d["window_end"]))
-            is_tomorrow = window_start.date() > today_dt
-            from_period, from_clock = _shift_from(window_start, today_dt)
-            window_clock = f"{window_start.strftime('%H:%M')}–{window_end.strftime('%H:%M')}"
-            result.append(
-                SuggestionItem(
-                    id=window_id,
-                    suggestion_type="shift-consumption",
-                    period_start=window_start.isoformat(),
-                    period_end=window_end.isoformat(),
-                    from_period=from_period,
-                    clock_range=from_clock if from_period else window_clock,
-                    to_is_tomorrow=is_tomorrow,
-                    to_period=_period_from_hour(window_start.hour),
-                    to_time=window_start.strftime("%H:%M"),
-                    impact_kwh_estimated=impact,
-                    reward_points=int(d.get("reward_points_estimated", 0)),
-                    confidence=_float(d.get("confidence"), 0.75),
-                )
-            )
-        except (KeyError, ValueError) as exc:
-            logger.warning("Skipping malformed flexibility window: %s", exc)
-
-    return result[:_MAX_SUGGESTIONS]
+    return _build_suggestions(
+        [i.to_dict() for i in res.items], enrichment, committed_ids, today_dt
+    )
 
 
 @router.post("/{suggestion_id}/respond", response_model=SuggestionRespondResponse)
