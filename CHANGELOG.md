@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-07-03)
+
+### Features
+
+- **suggestions**: Community-driven visibility with per-device enrichment
+  ([`fe16adb`](https://github.com/celine-eu/flexibility-api/commit/fe16adbb5f69111018e6b3405c2bd6aa23a7a4bc))
+
+
 ## v1.2.1 (2026-07-02)
 
 ### Bug Fixes
