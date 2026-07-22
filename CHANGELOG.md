@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.1 (2026-07-22)
+
+### Bug Fixes
+
+- **suggestions**: Show all open windows, render community-local times, drop post-21:00 windows
+  ([`53ea20c`](https://github.com/celine-eu/flexibility-api/commit/53ea20c214f4de5820a195c92276186b8b51a8c4))
+
+
 ## v1.4.0 (2026-07-22)
 
 ### Features
