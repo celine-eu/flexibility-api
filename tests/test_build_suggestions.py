@@ -62,3 +62,24 @@ def test_enrichment_with_null_reward_points_does_not_crash() -> None:
     assert len(items) == 1
     assert items[0].reward_points == 0
     assert items[0].impact_kwh_estimated == 1.8
+
+
+def test_confidence_absent_stays_none() -> None:
+    window = _window()
+    del window["confidence"]
+    items = _build_suggestions([window], {}, set(), date(2026, 7, 2))
+    assert items[0].confidence is None
+
+
+def test_confidence_null_stays_none() -> None:
+    window = _window()
+    window["confidence"] = None
+    items = _build_suggestions([window], {}, set(), date(2026, 7, 2))
+    assert items[0].confidence is None
+
+
+def test_confidence_value_passes_through() -> None:
+    window = _window()
+    window["confidence"] = 0.62
+    items = _build_suggestions([window], {}, set(), date(2026, 7, 2))
+    assert items[0].confidence == 0.62

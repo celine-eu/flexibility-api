@@ -22,7 +22,9 @@ class SuggestionItem(BaseModel):
     reward_points: int | None = None
     # Community surplus budget for the window (kWh) — always present.
     community_kwh: float = 0.0
-    confidence: float = 0.75
+    # Measured window confidence (realized hit-rate from the pipeline); None until
+    # enough scored history exists — the UI hides the bar when absent.
+    confidence: float | None = None
 
 
 class SuggestionRespondRequest(BaseModel):

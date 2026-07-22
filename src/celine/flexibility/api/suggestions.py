@@ -141,7 +141,11 @@ def _build_suggestions(
                     impact_kwh_estimated=impact,
                     reward_points=reward,
                     community_kwh=_float(d.get("community_kwh")),
-                    confidence=_float((enr or d).get("confidence"), 0.75),
+                    confidence=(
+                        _float(raw_conf)
+                        if (raw_conf := (enr or d).get("confidence")) is not None
+                        else None
+                    ),
                 )
             )
         except (KeyError, ValueError, TypeError) as exc:
