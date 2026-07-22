@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from sqlalchemy import select
@@ -39,7 +40,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/suggestions", tags=["suggestions"])
 
-_MAX_SUGGESTIONS = 2  # ranking cap — visibility is community-driven, never gated on personal impact
+_MAX_SUGGESTIONS = 8  # safety ceiling only — every open window is shown, not a rolling two
+
+# Gold `rec_flexibility_windows*` store window_start/window_end as `timestamp
+# WITHOUT time zone` holding UTC. Commitments store them tz-aware, so emitting the
+# gold values naively made the same window render two hours apart depending on which
+# side it came from. Everything below normalises to UTC and labels in community time.
+_COMMUNITY_TZ = ZoneInfo("Europe/Rome")
+
+# Windows must finish by this local hour — nobody is asked to shift load late at night.
+_LATEST_END_HOUR = 21
 
 
 # ── period helpers (mirrored from celine-webapp) ──────────────────────────────
@@ -80,6 +90,32 @@ def _shift_from(window_start: datetime, today_date: object) -> tuple[str, str]:
     return "", ""
 
 
+def _as_utc(value: Any) -> datetime:
+    """Coerce a window timestamp to an aware UTC datetime.
+
+    Args:
+        value: ISO string or datetime from a gold window row (naive = UTC) or
+            from an already-aware source.
+
+    Returns:
+        The same instant as a timezone-aware UTC datetime.
+    """
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _to_community_time(dt: datetime) -> datetime:
+    """Render an aware UTC instant in the community's local timezone."""
+    return dt.astimezone(_COMMUNITY_TZ)
+
+
+def _ends_too_late(local_start: datetime, local_end: datetime) -> bool:
+    """True when the window runs past _LATEST_END_HOUR in community time."""
+    if local_end.date() > local_start.date():
+        return True
+    return (local_end.hour, local_end.minute) > (_LATEST_END_HOUR, 0)
+
+
 def _float(val: Any, default: float = 0.0) -> float:
     try:
         return float(val)
@@ -113,20 +149,30 @@ def _build_suggestions(
         Ranked suggestions: enriched windows first (personal impact desc),
         then by community surplus, capped at _MAX_SUGGESTIONS.
     """
+    # Enrichment keys come from the per-device fetcher as naive UTC — normalise both
+    # sides so the lookup still matches once windows are timezone-aware.
+    enrichment_utc = {
+        (_as_utc(start), _as_utc(end)): row for (start, end), row in enrichment.items()
+    }
+
     items: list[SuggestionItem] = []
     for d in community_windows:
         try:
             window_id = str(d.get("_id", ""))
             if not window_id or window_id in committed_ids:
                 continue
-            window_start = datetime.fromisoformat(str(d["window_start"]))
-            window_end = datetime.fromisoformat(str(d["window_end"]))
-            enr = enrichment.get((window_start, window_end))
+            window_start = _as_utc(d["window_start"])
+            window_end = _as_utc(d["window_end"])
+            local_start = _to_community_time(window_start)
+            local_end = _to_community_time(window_end)
+            if _ends_too_late(local_start, local_end):
+                continue
+            enr = enrichment_utc.get((window_start, window_end))
             impact = _float(enr.get("estimated_kwh")) if enr else None
             reward = int(enr.get("reward_points_estimated") or 0) if enr else None
-            is_tomorrow = window_start.date() > today_date
-            from_period, from_clock = _shift_from(window_start, today_date)
-            window_clock = f"{window_start.strftime('%H:%M')}–{window_end.strftime('%H:%M')}"
+            is_tomorrow = local_start.date() > today_date
+            from_period, from_clock = _shift_from(local_start, today_date)
+            window_clock = f"{local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}"
             items.append(
                 SuggestionItem(
                     id=window_id,
@@ -136,8 +182,8 @@ def _build_suggestions(
                     from_period=from_period,
                     clock_range=from_clock if from_period else window_clock,
                     to_is_tomorrow=is_tomorrow,
-                    to_period=_period_from_hour(window_start.hour),
-                    to_time=window_start.strftime("%H:%M"),
+                    to_period=_period_from_hour(local_start.hour),
+                    to_time=local_start.strftime("%H:%M"),
                     impact_kwh_estimated=impact,
                     reward_points=reward,
                     community_kwh=_float(d.get("community_kwh")),
