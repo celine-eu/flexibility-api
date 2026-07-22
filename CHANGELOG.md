@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-07-22)
+
+### Features
+
+- **suggestions**: Pass window confidence through as nullable measured value
+  ([`2ca9e2c`](https://github.com/celine-eu/flexibility-api/commit/2ca9e2c105438092838dbc3245a9ed67fad4a111))
+
+
 ## v1.3.0 (2026-07-03)
 
 ### Features
