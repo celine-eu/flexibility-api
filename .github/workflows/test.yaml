@@ -1,0 +1,179 @@
+### Test flexibility-api.
+#
+# One job, because the suite needs nothing: no PostgreSQL, no Digital Twin, no broker,
+# no OPA server. That is ADR-0003 and ADR-0004. Running it on every supported Python is
+# what stops a version-gated import from reaching a release.
+#
+# Three checks are added on top of pytest, and each catches something pytest cannot:
+#
+#   * the policy bundle loads — `regorus` is a compiled dependency and the suite's
+#     authorisation guarantees are worthless without it (ADR-0002)
+#   * importing every submodule, because the fakes keep most of this package's heavier
+#     dependencies out of the suite's path and a module no test touches can still fail
+#     to import
+#   * the requirement trace, checked both ways — see docs/specifications/index.md
+#
+# What is deliberately absent: a PostgreSQL job. The database tests run on SQLite and the
+# migrations are exercised by nothing. ADR-0003 states that gap and issue #23 tracks it;
+# it is owed work, not an oversight here.
+
+name: Test flexibility-api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "policies/**"
+      - "docs/specifications/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/test.yaml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "policies/**"
+      - "docs/specifications/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/test.yaml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 1
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: Test on ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: uv sync --python ${{ matrix.python-version }}
+
+      - name: Test
+        run: uv run --python ${{ matrix.python-version }} pytest
+
+      # Said out loud here so a `regorus` wheel missing for a Python version is reported
+      # as itself rather than as a fixture error in every policy test. The assertion is
+      # the same one `conftest.py` makes, for the same reason: a bundle that did not load
+      # means AccessPolicy allows everything.
+      - name: The policy bundle loads
+        run: |
+          uv run --python ${{ matrix.python-version }} python - <<'EOF'
+          from celine.flexibility.security.policy import AccessPolicy
+          engine = AccessPolicy()._engine
+          assert engine is not None, "OPA bundle did not load"
+          assert engine.has_package("celine.flexibility.access")
+          print("policy bundle loaded:", engine.get_packages())
+          EOF
+
+      # A rule conflict is a *runtime* error in Rego — the bundle parses and loads, and
+      # only the input that reaches two matching rules raises. That is exactly how #22
+      # survived: nothing evaluated the bundle. Walking the denial branches here means a
+      # regression is caught even if someone deletes the tests.
+      - name: Every denial produces exactly one reason
+        run: |
+          uv run --python ${{ matrix.python-version }} python - <<'EOF'
+          from celine.flexibility.security.policy import AccessPolicy, _PACKAGE
+
+          engine = AccessPolicy()._engine
+          cases = [
+              ("owner, scoped",       "alice", "read",    False, ["flexibility.read"]),
+              ("stranger, scoped",    "bob",   "read",    False, ["flexibility.read"]),
+              ("stranger, unscoped",  "bob",   "read",    False, []),
+              ("owner, unscoped",     "alice", "read",    False, []),
+              ("user on svc route",   "alice", "service", False, ["flexibility.read"]),
+              ("service, scoped",     "svc",   "service", True,  ["flexibility.read"]),
+              ("service, unscoped",   "svc",   "service", True,  []),
+              ("unknown action",      "alice", "frobnicate", False, ["flexibility.admin"]),
+          ]
+          for name, sub, action, is_service, scopes in cases:
+              resource = {"type": "flexibility.commitment"}
+              if not is_service:
+                  resource["attributes"] = {"owner_id": "alice"}
+              document = {
+                  "action": {"name": action},
+                  "resource": resource,
+                  "subject": {"id": sub, "is_service": is_service,
+                              "scopes": scopes, "groups": []},
+              }
+              result = engine.evaluate(f"data.{_PACKAGE}", document)
+              value = result["result"][0]["expressions"][0]["value"]
+              print(f"  {name:22} allow={value.get('allow')!s:5} {value.get('reason')}")
+          print("no rule conflicts")
+          EOF
+
+      # The fakes keep most of this package's dependencies out of the suite's path, so
+      # importing every module is the only thing that proves they all load at all.
+      - name: Import every submodule
+        run: |
+          uv run --python ${{ matrix.python-version }} python - <<'EOF'
+          import importlib, pkgutil, sys
+          import celine.flexibility as pkg
+
+          names = ["celine.flexibility"] + [
+              m.name for m in pkgutil.walk_packages(pkg.__path__, "celine.flexibility.")
+          ]
+          failed = []
+          for name in names:
+              try:
+                  importlib.import_module(name)
+              except Exception as exc:
+                  failed.append(f"{name}: {exc!r}")
+          if failed:
+              print("\n".join(failed))
+              sys.exit(1)
+          print(f"imported {len(names)} modules")
+          EOF
+
+  trace:
+    name: Requirement trace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Checked both ways. A requirement with no test declaring it is unverified; a test
+      # declaring one that is not specified is a typo, and a typo in a trace tag is
+      # indistinguishable from coverage until someone reads the matrix.
+      - name: Every requirement is verified, and every tag names one
+        run: |
+          grep -rho --include='*.py' '@verifies REQ-[0-9]\{4\}' tests/ \
+            | sed 's/@verifies //' | sort -u > /tmp/tagged
+          grep -rho '^### REQ-[0-9]\{4\}' docs/specifications/ \
+            | sed 's/^### //' | sort -u > /tmp/specified
+
+          untested=$(comm -13 /tmp/tagged /tmp/specified)
+          unspecified=$(comm -23 /tmp/tagged /tmp/specified)
+
+          if [ -n "$untested" ]; then
+            echo "::error::specified but no test declares them:"; echo "$untested"
+          fi
+          if [ -n "$unspecified" ]; then
+            echo "::error::declared by a test but not specified:"; echo "$unspecified"
+          fi
+          [ -z "$untested" ] && [ -z "$unspecified" ]
+
+          echo "$(wc -l < /tmp/specified) requirements, all verified"

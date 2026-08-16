@@ -3,12 +3,25 @@
 Evaluates decisions using the celine.sdk.policies engine loaded from
 ./policies/flexibility.rego.  Falls back to permissive if policies are
 not configured (dev/test convenience).
+
+`PolicyEngine.evaluate()` takes a **Rego query**, not a package name — passing
+"celine/flexibility/access" made every evaluation raise, and the permissive fallback
+below turned every raise into an allow.  Queries are therefore built as
+`data.<dotted package>.<rule>`, which is what the SDK's own `evaluate_decision` does
+internally.
+
+`evaluate_decision` itself is not used: it builds its own input document from a
+`PolicyInput`, whose `ResourceType` is a closed enum with no member for a flexibility
+commitment, and whose subject shape (`type: "service"`) is not the one this bundle is
+written against (`is_service: true`).  Adopting it would mean rewriting the .rego rather
+than fixing a malformed query.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from celine.sdk.auth.jwt import extract_groups
 from fastapi import Request
@@ -16,6 +29,9 @@ from fastapi import Request
 logger = logging.getLogger(__name__)
 
 _POLICIES_DIR = Path(__file__).parent.parent.parent.parent.parent / "policies"
+
+# The package as Rego addresses it. The dots matter; slashes are not a package path.
+_PACKAGE = "celine.flexibility.access"
 
 
 @dataclass(frozen=True)
@@ -44,18 +60,43 @@ class AccessPolicy:
         except ImportError:
             logger.warning("celine.sdk.policies not available — running without OPA")
 
-    async def _evaluate(self, package: str, input_data: dict) -> Decision:
+    @staticmethod
+    def _value(result: Any) -> Any:
+        """Pull the single value out of a regorus query result.
+
+        Shape: {"result": [{"expressions": [{"value": …}]}]}. An undefined rule comes
+        back with an empty "result", which is not an error — it is the answer.
+        """
+        try:
+            return result["result"][0]["expressions"][0]["value"]
+        except (KeyError, IndexError, TypeError):
+            return None
+
+    def _reason(self, input_data: dict) -> str | None:
+        """The decision's reason, or None if it cannot be read.
+
+        Separate from the allow query, and separately fallible on purpose: a reason is a
+        message and an allow is an authorisation. A bundle whose `reason` rules conflict
+        must not be able to change who gets in — which is exactly what happened before
+        the two were split.
+        """
+        try:
+            reason = self._value(self._engine.evaluate(f"data.{_PACKAGE}.reason", input_data))
+        except Exception as exc:
+            logger.warning("OPA reason unavailable: %s", exc)
+            return None
+        return reason if isinstance(reason, str) else None
+
+    async def _evaluate(self, input_data: dict) -> Decision:
         if self._engine is None:
+            logger.warning("No policy engine — allowing %r", input_data.get("action"))
             return Decision(True, "no-policy-engine")
         try:
-            result = self._engine.evaluate(package, input_data)
-            return Decision(
-                allowed=bool(result.get("allow", False)),
-                reason=result.get("reason"),
-            )
+            allowed = self._value(self._engine.evaluate(f"data.{_PACKAGE}.allow", input_data))
         except Exception as exc:
             logger.warning("OPA evaluation error: %s", exc)
             return Decision(True, "policy-error-permissive")
+        return Decision(allowed=allowed is True, reason=self._reason(input_data))
 
     async def allow_user_commitment(self, request: Request, user_id: str, action: str) -> Decision:
         """Check if the caller may read/write a commitment belonging to user_id."""
@@ -80,7 +121,7 @@ class AccessPolicy:
                 "groups": extract_groups(user.claims),
             },
         }
-        return await self._evaluate("celine/flexibility/access", input_data)
+        return await self._evaluate(input_data)
 
     async def allow_service(self, request: Request, action: str) -> Decision:
         """Check if the caller is a service account with adequate scope."""
@@ -105,4 +146,4 @@ class AccessPolicy:
                 "groups": [],
             },
         }
-        return await self._evaluate("celine/flexibility/access", input_data)
+        return await self._evaluate(input_data)
