@@ -27,8 +27,7 @@ Only `committed` rows. A participant who cancelled must not be reminded of a com
 they withdrew.
 
 The times are formatted from **UTC**. That is not the community-local clock the suggestion
-list labels windows with (REQ-0016), so the two surfaces disagree by two hours in summer —
-see `.agents/knowledge/two-clocks-label-the-same-window.md`.
+list labels windows with (REQ-0016), so the two surfaces disagree by two hours in summer.
 
 ### REQ-0045 — `reminded_at` is committed before the nudges are sent
 

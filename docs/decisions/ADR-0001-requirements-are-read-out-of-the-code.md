@@ -31,7 +31,7 @@ change visible, because a change now contradicts a written sentence.
 
 `../celine-grid` and `../celine-ai-assistant` both faced this and took the second.
 
-The plan that preceded this work (`.agents/plans/the-consequential-half-is-untested.md`)
+The plan that preceded this work
 held two questions open for the operator: whether settlement had a specification anywhere,
 and whether the points formula was a product decision. Neither had an answer. Testing a
 money-adjacent calculation against the code that computes it pins the current behaviour,

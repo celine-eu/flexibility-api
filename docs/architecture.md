@@ -144,4 +144,4 @@ submodule imports, and that the requirement trace holds in both directions
 (`.github/workflows/test.yaml`).
 
 The procedure, and what a green run does and does not prove, is
-`.agents/playbooks/testing.md`.
+the companion's testing playbook.

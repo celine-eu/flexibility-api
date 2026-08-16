@@ -97,7 +97,7 @@ Scheduled through the nudging client built at startup, with the window, the sugg
 and the estimated points. Absent client, or a scheduling call that raises: logged,
 `200` returned.
 
-The reasoning is in `.agents/knowledge/nudge-scheduling-is-best-effort.md`. A notification
+The reasoning is in the companion's knowledge. A notification
 service being briefly unreachable is not a reason to reject a commitment the participant
 has already made, and `send_pending_reminders` (REQ-0044) recovers the notification once
 the window opens.
