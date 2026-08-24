@@ -13,9 +13,15 @@
 #     to import
 #   * the requirement trace, checked both ways — see docs/specifications/index.md
 #
-# What is deliberately absent: a PostgreSQL job. The database tests run on SQLite and the
-# migrations are exercised by nothing. ADR-0003 states that gap and issue #23 tracks it;
-# it is owed work, not an oversight here.
+# A third job, `migrations`, is the one thing here that needs a service. The suite builds
+# its schema with `Base.metadata.create_all`, so it says nothing about whether the
+# revisions produce that schema — a model edited without a revision passes all 177 tests
+# and fails at deploy time. It is a separate job, and not part of `pytest`, on purpose:
+# the property that the default run needs nothing running is what keeps the baseline
+# cheap enough that nobody skips it (ADR-0003).
+#
+# What is still deliberately absent: a PostgreSQL leg for the database tests themselves.
+# They run on SQLite, and ADR-0003 names what that does not prove.
 
 name: Test flexibility-api
 
@@ -26,6 +32,8 @@ on:
       - "src/**"
       - "tests/**"
       - "policies/**"
+      - "alembic/**"
+      - "alembic.ini"
       - "docs/specifications/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -35,6 +43,8 @@ on:
       - "src/**"
       - "tests/**"
       - "policies/**"
+      - "alembic/**"
+      - "alembic.ini"
       - "docs/specifications/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -177,3 +187,60 @@ jobs:
           [ -z "$untested" ] && [ -z "$unspecified" ]
 
           echo "$(wc -l < /tmp/specified) requirements, all verified"
+
+  migrations:
+    name: Migrations against PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      # 17, matching `docker-compose.yml` and the deployment. Testing the revisions
+      # against a version this service does not run on would answer a question nobody
+      # asked.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flexibility
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # `alembic/env.py` reads this through `settings.database_url`; it calls
+      # `load_dotenv` first, which does not override an already-set variable, so this
+      # wins here and on a developer machine that has a `.env`.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/flexibility
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: uv sync
+
+      # Only that they apply from empty. The schema is created by `env.py`, which is why
+      # no step here creates it.
+      - name: The revisions apply from empty
+        run: uv run alembic upgrade head
+
+      # The half that matters. `upgrade head` proves the revisions run; `check` proves
+      # they arrive at the schema the models describe, which is the thing that rots
+      # silently — a model edited without a revision breaks nothing until deployment.
+      - name: The migrations and the models agree
+        run: uv run alembic check
+
+      # `downgrade base` alone only proves it exited 0. Coming back up is what proves it
+      # dropped what it created: a downgrade that forgot a table fails the re-upgrade on
+      # `create_table`. `flexibility.alembic_version` survives by design — it is
+      # Alembic's own bookkeeping, not part of any revision.
+      - name: The down path runs, and undoes what the up path did
+        run: |
+          uv run alembic downgrade base
+          uv run alembic upgrade head

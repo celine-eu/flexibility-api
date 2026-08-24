@@ -59,7 +59,8 @@ task run
 | `task debug` | Start with debugger (port 48017) |
 | `task test` | Run pytest |
 | `task alembic:migrate` | Apply pending migrations |
-| `task alembic:revision` | Generate new migration |
+| `task alembic:sync-model` | Generate new migration |
+| `task alembic:check` | Fail if the models have drifted from the migrations |
 | `task alembic:reset` | Reset DB to base |
 | `task release` | Run semantic-release |
 

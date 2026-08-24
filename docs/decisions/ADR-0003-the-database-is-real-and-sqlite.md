@@ -37,13 +37,8 @@ the metadata, and the tests override the session dependency rather than the URL.
 
 Every isolation and selection test in the suite runs the SQL that ships.
 
-Four things it does not prove:
+Three things it does not prove:
 
-- **That the migrations produce this schema.** The tables come from the models;
-  `alembic upgrade head` is a separate path exercised by nothing. A model that has
-  drifted from its migrations passes the whole suite. Tracked as
-  [#23](https://github.com/celine-eu/flexibility-api/issues/23); `alembic check` is the
-  half that matters, and it needs a real PostgreSQL.
 - **Timezone behaviour.** `DateTime(timezone=True)` is `TIMESTAMPTZ` on PostgreSQL and a
   naive string on SQLite, so an aware datetime written in a test comes back naive. Every
   comparison in this service is UTC-on-both-sides, so nothing depends on the difference
@@ -54,7 +49,23 @@ Four things it does not prove:
   a test that expected them to hold independent transactions would be testing SQLite's
   behaviour, not the service's.
 
-Closing the first needs a CI job with a real PostgreSQL service container.
-`../celine-ai-assistant` has one; doing the same here is the obvious next step, and it is
-deliberately **not** part of the default `pytest` run — the property that this suite needs
-nothing running is what keeps the baseline cheap enough that nobody skips it.
+A fourth was closed rather than lived with. **That the migrations produce this schema**
+was proven by nothing at all — the tables come from the models, `alembic upgrade head` is
+a separate path, and a model that had drifted from its revisions passed all 177 tests and
+failed at deploy time against a real database. The `migrations` job in
+`.github/workflows/test.yaml` now runs `upgrade head`, `alembic check` and
+`downgrade base` against a `postgres:17` service container, on the same pushes and pull
+requests as the suite ([#23](https://github.com/celine-eu/flexibility-api/issues/23)).
+`alembic check` is the half that matters: `upgrade head` proves the revisions run, and
+`check` proves they arrive at the schema the models describe.
+
+It is a **separate job**, and deliberately not part of `pytest`. The property that the
+default run needs nothing running is what keeps the baseline cheap enough that nobody
+skips it, and that property is the whole reason this ADR chose SQLite.
+
+The database tests themselves were **not** given a PostgreSQL leg. `db_sessionmaker`
+builds its engine directly, so a second dialect means a new fixture contract rather than
+an environment variable, and this service's SQL is `select().where()` with an `order_by` —
+nothing whose behaviour divides the two engines. The three gaps above are properties of
+this fixture and remain unproven; the day a query needs the real dialect, adding the leg
+is a decision with its own record.

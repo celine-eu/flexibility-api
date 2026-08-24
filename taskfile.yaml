@@ -33,6 +33,11 @@ tasks:
     vars:
       MSG: "update model"
 
+  alembic:check:
+    desc: Fail if the models imply a revision that does not exist (needs PostgreSQL)
+    cmds:
+      - uv run alembic check
+
   alembic:reset:
     desc: Downgrade to base (wipe schema)
     cmds:
