@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     rec_registry_scope: str | None = None
     nudging_scope: str | None = None
 
+    # Settlement also runs on this timer (seconds), not only on the pipeline's MQTT
+    # message — see services.pipeline_listener.run_settlement_fallback.
+    settlement_fallback_seconds: float = 6 * 3600.0
+
     # MQTT — driven by CELINE_MQTT_* env vars
     mqtt: MqttSettings = Field(default_factory=MqttSettings)
 

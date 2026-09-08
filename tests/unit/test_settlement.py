@@ -12,6 +12,7 @@ transition and the single commit — is the code that ships.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -114,24 +115,65 @@ async def test_only_committed_rows_are_settled(db, dt, status):
 
 
 # @verifies REQ-0038
-async def test_a_window_outside_the_period_is_left_alone(db, dt):
+async def test_a_window_that_closed_on_an_earlier_day_is_settled_too(db, dt):
     """
-    The bounds are the whole of the day in UTC — `period_start >= 00:00` and
-    `period_end <= 24:00` — so a window that merely *overlaps* the day is not settled by
-    it. A window crossing midnight belongs to neither day and is settled by nothing.
+    Staging, July → September 2026: 34 accepted windows stayed `committed` for weeks.
+    Settlement ran once per window — the morning after, on the pipeline's MQTT message —
+    and a window skipped that morning (DT unreachable, data not there yet, message
+    missed, pod restarting) was never looked at again.
+
+    The selection is therefore every open commitment that closed *on or before* the
+    period, not only the ones that closed on it. A miss is retried the next day for
+    free, and the status filter is what keeps the retry idempotent.
     """
-    yesterday = commitment(
+    two_days_before = commitment(
+        start=datetime(2026, 6, 30, 9, tzinfo=timezone.utc),
+        end=datetime(2026, 6, 30, 12, tzinfo=timezone.utc),
+    )
+    the_day_before = commitment(
         start=datetime(2026, 7, 1, 9, tzinfo=timezone.utc),
         end=datetime(2026, 7, 1, 12, tzinfo=timezone.utc),
     )
+    await arrange(db, two_days_before, the_day_before)
+    dt.communities.set("rec_settlement_1h", settlement_rows(1.0))
+
+    assert await settle_completed_windows(db, dt, PERIOD) == 2
+
+
+# @verifies REQ-0038
+async def test_a_window_still_open_at_the_end_of_the_period_is_left_alone(db, dt):
+    """
+    The bound is the end of the period day in UTC. A window that crosses midnight has
+    not closed by then: it is settled by the next day's run, when all of its hours have
+    been metered — settling it now would pay for hours that had not happened.
+    """
     crosses_midnight = commitment(
         start=datetime(2026, 7, 2, 23, tzinfo=timezone.utc),
         end=datetime(2026, 7, 3, 1, tzinfo=timezone.utc),
     )
-    await arrange(db, yesterday, crosses_midnight)
+    await arrange(db, crosses_midnight)
     dt.communities.set("rec_settlement_1h", settlement_rows(1.0))
 
     assert await settle_completed_windows(db, dt, PERIOD) == 0
+    assert await settle_completed_windows(db, dt, PERIOD + timedelta(days=1)) == 1
+
+
+# @verifies REQ-0042
+async def test_a_skipped_commitment_is_logged_where_someone_will_see_it(db, dt, caplog):
+    """
+    A skip used to be logged at DEBUG — invisible in a pod that keeps two days of logs at
+    INFO. Thirty-four commitments were skipped for weeks without a single line saying so.
+    """
+    await arrange(db, commitment())
+    dt.communities.set("rec_settlement_1h", FetchResult([]))
+
+    with caplog.at_level(logging.WARNING, logger="celine.flexibility.services.settlement"):
+        await settle_completed_windows(db, dt, PERIOD)
+
+    assert any(
+        record.levelno == logging.WARNING and "No settlement data" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 # @verifies REQ-0038

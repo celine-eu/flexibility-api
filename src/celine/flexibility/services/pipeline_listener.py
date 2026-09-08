@@ -5,14 +5,19 @@ Replaces the digital-twin event handlers for flexibility:
   - rec-forecasting-flow completed → notify_flexibility_opportunity()
   - rec_flexibility_flow completed → settle_completed_windows()
 
+Settlement additionally runs on a timer (`run_settlement_fallback`), because the
+MQTT message is the only other trigger and a broker that is down at startup is
+treated as non-fatal — without the timer such a pod settled nothing until restarted.
+
 All service clients (DT, REC Registry, Nudging) are created once at startup
 from settings using OidcClientCredentialsProvider for service-to-service auth.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from celine.sdk.auth import OidcClientCredentialsProvider
 from celine.sdk.broker import MqttBroker, MqttConfig, PipelineRunEvent, ReceivedMessage
@@ -127,8 +132,6 @@ async def on_pipeline_run(msg: ReceivedMessage) -> None:
         )
     # flexibility
     elif event.flow == "rec-flexibility-flow":
-        if _dt_client is None:
-            return
         # Settle yesterday's commitments — the pipeline runs after midnight
         # and yesterday's windows now have metered data available.
         try:
@@ -136,9 +139,41 @@ async def on_pipeline_run(msg: ReceivedMessage) -> None:
         except (ValueError, AttributeError):
             period_date = datetime.now(timezone.utc).date() - timedelta(days=1)
 
-        async with SessionLocal() as session:
-            count = await settle_completed_windows(session, _dt_client, period_date)
-        if count:
-            logger.info(
-                "Settled %d flexibility commitments for period=%s", count, period_date
+        await settle_through(period_date)
+
+
+async def settle_through(period_date: date | None = None) -> int:
+    """Settle every open commitment closed by the end of `period_date` (default: yesterday)."""
+    if _dt_client is None:
+        return 0
+    if period_date is None:
+        period_date = datetime.now(timezone.utc).date() - timedelta(days=1)
+
+    async with SessionLocal() as session:
+        count = await settle_completed_windows(session, _dt_client, period_date)
+    if count:
+        logger.info(
+            "Settled %d flexibility commitments for period=%s", count, period_date
+        )
+    return count
+
+
+async def run_settlement_fallback(stop_event: asyncio.Event) -> None:
+    """Run settlement on a timer, independently of the pipeline's MQTT message.
+
+    Runs once at startup (so a restarted pod catches up at once) and then every
+    `settings.settlement_fallback_seconds`. The settlement is idempotent, so running
+    it more often than the pipeline costs nothing but a few DT fetches.
+    """
+    while not stop_event.is_set():
+        try:
+            await settle_through()
+        except Exception:
+            logger.exception("Settlement fallback tick failed")
+
+        try:
+            await asyncio.wait_for(
+                stop_event.wait(), timeout=settings.settlement_fallback_seconds
             )
+        except TimeoutError:
+            continue

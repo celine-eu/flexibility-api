@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -8,7 +9,11 @@ from fastapi import FastAPI
 from celine.flexibility.core.config import settings
 from celine.flexibility.routes import register_routes
 from celine.flexibility.security.middleware import PolicyMiddleware
-from celine.flexibility.services.pipeline_listener import create_broker, on_pipeline_run
+from celine.flexibility.services.pipeline_listener import (
+    create_broker,
+    on_pipeline_run,
+    run_settlement_fallback,
+)
 
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
@@ -28,9 +33,17 @@ async def lifespan(app: FastAPI):
         logger.warning("MQTT broker unavailable at startup: %s", exc)
         await broker.disconnect()
 
+    stop_fallback = asyncio.Event()
+    fallback = asyncio.create_task(run_settlement_fallback(stop_fallback))
+
     yield
 
     logger.info("Shutting down %s", settings.app_name)
+    stop_fallback.set()
+    try:
+        await asyncio.wait_for(fallback, timeout=5)
+    except Exception:
+        pass
     try:
         await broker.disconnect()
     except Exception:

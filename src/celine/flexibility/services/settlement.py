@@ -45,7 +45,14 @@ async def settle_completed_windows(
     dt: DTClient,
     period_date: date,
 ) -> int:
-    """Settle commitments whose window closed on period_date.
+    """Settle every open commitment whose window closed on or before period_date.
+
+    The only bound is the end of period_date (UTC). There is deliberately no lower
+    bound: a commitment skipped by an earlier run — DT unreachable, readings not there
+    yet, pipeline message missed, pod restarting — is looked at again on the next one.
+    Selecting on `status = committed` is what keeps that retry idempotent. (Until
+    2026-09-07 the selection was the single day, and 34 commitments skipped once in
+    staging stayed `committed` for weeks.)
 
     Fetches rec_settlement_1h for each commitment's exact window from DTClient
     community domain, sums consumption_kwh, and computes
@@ -53,14 +60,12 @@ async def settle_completed_windows(
 
     Returns the count of settled commitments.
     """
-    period_start = datetime.combine(period_date, datetime.min.time(), tzinfo=timezone.utc)
     period_end = datetime.combine(period_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
 
     rows = (
         await session.execute(
             select(FlexibilityCommitment).where(
                 FlexibilityCommitment.status == "committed",
-                FlexibilityCommitment.period_start >= period_start,
                 FlexibilityCommitment.period_end <= period_end,
             )
         )
@@ -111,9 +116,12 @@ async def settle_completed_windows(
                 continue
 
             if not result or result.count == 0:
-                logger.debug(
-                    "No settlement data for device=%s window=%s–%s — skipping",
-                    device_id, window_start, window_end,
+                # WARNING, not DEBUG: a skip is retried tomorrow, but a commitment
+                # that keeps being skipped is the only visible trace of missing data.
+                logger.warning(
+                    "No settlement data for commitment=%s device=%s window=%s–%s "
+                    "— left committed, retried on the next run",
+                    row.id, device_id, window_start, window_end,
                 )
                 continue
 

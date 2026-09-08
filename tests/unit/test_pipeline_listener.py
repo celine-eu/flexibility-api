@@ -14,6 +14,7 @@ decided to call, and with what.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -164,6 +165,59 @@ async def test_an_unparseable_timestamp_falls_back_to_yesterday(wired):
     expected = datetime.now(timezone.utc).date() - timedelta(days=1)
     (_, kwargs), = wired
     assert kwargs["period_date"] == expected
+
+
+# ---------------------------------------------------------------------------
+# The settlement fallback — the same settlement, on a timer
+# ---------------------------------------------------------------------------
+
+
+# @verifies REQ-0052
+async def test_the_fallback_settles_yesterday_on_a_timer(wired, monkeypatch):
+    """
+    The MQTT message was the only trigger, and `lifespan` treats a broker that is down
+    at startup as non-fatal — so a pod that started without the broker settled nothing
+    until it was restarted. The fallback runs the same idempotent settlement on a
+    timer: a missed message now costs hours, not weeks.
+    """
+    monkeypatch.setattr(listener.settings, "settlement_fallback_seconds", 0.01)
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(listener.run_settlement_fallback(stop))
+    await asyncio.sleep(0.05)
+    stop.set()
+    await asyncio.wait_for(task, timeout=1)
+
+    settles = [kwargs for name, kwargs in wired if name == "settle"]
+    assert len(settles) >= 2
+    assert settles[0]["period_date"] == datetime.now(timezone.utc).date() - timedelta(days=1)
+
+
+# @verifies REQ-0053
+async def test_a_failing_fallback_tick_does_not_end_the_loop(wired, monkeypatch):
+    """
+    Nothing restarts this task. If a database outage ended it, the pod would silently
+    go back to depending on the MQTT message alone.
+    """
+    calls = 0
+
+    async def _fail_then_work(session, dt, period_date):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("database is down")
+        return 0
+
+    monkeypatch.setattr(listener, "settle_completed_windows", _fail_then_work)
+    monkeypatch.setattr(listener.settings, "settlement_fallback_seconds", 0.01)
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(listener.run_settlement_fallback(stop))
+    await asyncio.sleep(0.05)
+    stop.set()
+    await asyncio.wait_for(task, timeout=1)
+
+    assert calls >= 2, "the loop survived the failing tick"
 
 
 # ---------------------------------------------------------------------------
