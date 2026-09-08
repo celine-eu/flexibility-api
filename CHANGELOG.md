@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v1.4.2 (2026-09-08)
+
+### Bug Fixes
+
+- Add tests, closes #21 #22, update harness
+  ([`87e588a`](https://github.com/celine-eu/flexibility-api/commit/87e588aa4cf50a57ae841a7a7e934d7ce109dee4))
+
+- Settle every open commitment closed by period end, retry daily, timer fallback; bump celine-sdk
+  1.17.1; ci: build-and-inspect v3.0.1
+  ([`ad74bb4`](https://github.com/celine-eu/flexibility-api/commit/ad74bb4ab1d1731eea66f0a9d667a604ca1bb129))
+
+### Chores
+
+- Fix tests
+  ([`01b827d`](https://github.com/celine-eu/flexibility-api/commit/01b827d7eccaac687112a4fd222f7c05b65862e8))
+
+
 ## v1.4.1 (2026-07-22)
 
 ### Bug Fixes
