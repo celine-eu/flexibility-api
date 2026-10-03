@@ -1,8 +1,8 @@
 """The authorisation rules, evaluated against the real `policies/flexibility.rego`.
 
-These are the tests the suite exists for. `AccessPolicy` returns `Decision(True, …)`
-whenever the engine is missing or the evaluation raises, so an *allow* proves nothing on
-its own — **a denial is the only observation that distinguishes a policy that ran from
+These are the tests the suite exists for. Under `CELINE_ENV=dev` — which the suite pins
+— `AccessPolicy` returns `Decision(True, …)` whenever the engine is missing or the
+evaluation raises, so an *allow* proves nothing on its own — **a denial is the only observation that distinguishes a policy that ran from
 one that was never consulted.** The `policy_engine` fixture refuses to let these tests
 run against an unloaded bundle.
 
@@ -10,8 +10,8 @@ The tests split into two halves, and the split is the point:
 
 - **The bundle.** What `flexibility.rego` decides, queried directly.
 - **The wiring.** What `AccessPolicy` does with the bundle — that it carries the
-  decision out, and that the two fail-open branches are still reachable and still
-  labelled.
+  decision out, that the two fallback branches fail closed outside dev, and that in dev
+  they are still reachable and still labelled.
 
 Both halves were broken until 2026-08-15 (#21, #22): the wrapper built a malformed query
 so the bundle was never consulted, and the bundle raised a rule conflict on the plainest
@@ -368,17 +368,61 @@ async def test_an_allowed_subject_is_allowed_by_the_policy_object(policy_engine)
     assert decision.reason == "user accessing own commitment"
 
 
-# @verifies REQ-0011
-async def test_a_missing_engine_allows_everything():
-    """
-    Fail-open, still deliberate and still reachable — it was not removed, because whether
-    authorisation should take the service down when its bundle is bad is a decision
-    nobody has been asked to make.
+def _set_env(monkeypatch, env: str | None) -> None:
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    if env is None:
+        monkeypatch.delenv("CELINE_ENV", raising=False)
+    else:
+        monkeypatch.setenv("CELINE_ENV", env)
 
-    What changed is that this branch is no longer taken on every call. The reason string
-    is the only signal, which is why it is asserted here: it is what a deployment
-    intolerant of fail-open has to alert on.
+
+def _explode(query, input_data):
+    raise RuntimeError("regorus fell over")
+
+
+# Unset, empty and anything that is not exactly `dev` — `development` included.
+HARDENED = pytest.mark.parametrize("env", [None, "", "staging", "prod", "development"])
+
+
+# @verifies REQ-0011
+@HARDENED
+async def test_outside_dev_a_missing_engine_denies_everything(monkeypatch, env):
     """
+    Fail closed (NIS2 finding R23). The service also refuses to start without the
+    bundle outside dev (REQ-0055); this is the per-decision half, so a policy that lost
+    its engine some other way still cannot wave a request through.
+    """
+    _set_env(monkeypatch, env)
+    policy = AccessPolicy()
+    policy._engine = None
+
+    decision = await policy._evaluate(_input(subject_id=OWNER, scopes=["flexibility.read"]))
+
+    assert decision.allowed is False
+    assert decision.reason == "no-policy-engine"
+
+
+# @verifies REQ-0011
+@HARDENED
+async def test_outside_dev_an_evaluation_that_raises_denies(policy_engine, monkeypatch, env):
+    _set_env(monkeypatch, env)
+    policy = AccessPolicy()
+    monkeypatch.setattr(policy._engine, "evaluate", _explode)
+
+    decision = await policy._evaluate(_input(subject_id=OWNER, scopes=["flexibility.read"]))
+
+    assert decision.allowed is False
+    assert decision.reason == "policy-error"
+
+
+# @verifies REQ-0011
+async def test_in_dev_a_missing_engine_allows_everything(monkeypatch):
+    """
+    Fail-open, still deliberate and still reachable — but only with `CELINE_ENV=dev`,
+    so a laptop without the bundle keeps working. The reason string is the only signal,
+    which is why it is asserted here.
+    """
+    _set_env(monkeypatch, "dev")
     policy = AccessPolicy()
     policy._engine = None
 
@@ -389,16 +433,13 @@ async def test_a_missing_engine_allows_everything():
 
 
 # @verifies REQ-0011
-async def test_an_evaluation_that_raises_allows(policy_engine, monkeypatch):
+async def test_in_dev_an_evaluation_that_raises_allows(policy_engine, monkeypatch):
     """
-    The second fail-open branch. Reached now only by a genuine engine failure — a bundle
-    that parses but whose `allow` rule raises — rather than by every request.
+    The second dev-only fail-open branch. Reached now only by a genuine engine failure —
+    a bundle that parses but whose `allow` rule raises — rather than by every request.
     """
+    _set_env(monkeypatch, "dev")
     policy = AccessPolicy()
-
-    def _explode(query, input_data):
-        raise RuntimeError("regorus fell over")
-
     monkeypatch.setattr(policy._engine, "evaluate", _explode)
 
     decision = await policy._evaluate(_input(subject_id=STRANGER, scopes=[]))

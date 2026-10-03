@@ -6,9 +6,10 @@ Keycloak; all six are faked here at the narrowest boundary that still exercises 
 
 OPA is the exception, and it is on purpose. `celine.sdk.policies` evaluates Rego **in
 process** via `regorus` — no server, no socket — so the real `policies/flexibility.rego`
-is what the suite evaluates. Faking it would be worse than useless: `AccessPolicy` falls
-back to `allow=True` when the bundle will not load, so a suite that faked the engine and
-a suite whose engine silently failed to load would produce identical passes. See
+is what the suite evaluates. Faking it would be worse than useless: under `CELINE_ENV=dev`,
+which the suite pins, `AccessPolicy` falls back to `allow=True` when the bundle will not
+load, so a suite that faked the engine and a suite whose engine silently failed to load
+would produce identical passes. See
 `docs/decisions/ADR-0002-the-policy-bundle-is-real-in-tests.md`.
 
 The environment is set *before* `celine.flexibility` is imported anywhere. `config.py`
@@ -24,6 +25,13 @@ import os
 # ---------------------------------------------------------------------------
 # Must run before the first `celine.flexibility` import. Do not move below them.
 # ---------------------------------------------------------------------------
+
+# Only `CELINE_ENV=dev` relaxes the posture (`celine.sdk.posture`); unset is hardened.
+# The suite runs against dev defaults — a `test:test` DSN, the default client secret —
+# and asserts the dev-only permissive fallbacks, so it pins dev rather than inheriting
+# whatever the shell has. Tests of the hardened posture monkeypatch it per test
+# (`tests/unit/test_posture.py`); the policy reads it per decision, the guard per call.
+os.environ["CELINE_ENV"] = "dev"
 
 # Parsed by SQLAlchemy at import to build the module-level engine; never connected to,
 # because every test that needs a database gets the SQLite session from `db_sessionmaker`.

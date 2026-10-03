@@ -89,10 +89,11 @@ server. It is reached from exactly one place, `PolicyMiddleware`, guarding two r
 Everything else is SQL: the participant-facing routes never consult a policy, and
 `WHERE user_id = :sub` is the whole of the separation between two participants.
 
-**The evaluation fails open.** A bundle that will not load and an `allow` query that
-raises both return an allow, and neither is distinguishable from a policy that ran and
-permitted. The reason string is the only signal — `no-policy-engine` and
-`policy-error-permissive` are what an intolerant deployment must alert on.
+**The evaluation fails closed outside development.** A bundle that will not load and an
+`allow` query that raises both return a denial — and a missing bundle refuses startup —
+unless `CELINE_ENV=dev`, where both return an allow with a warning (REQ-0011, REQ-0055).
+In dev neither is distinguishable from a policy that ran and permitted; the reason string
+(`no-policy-engine`, `policy-error-permissive`) is the only signal.
 
 Until 2026-08-15 that fallback was taken on **every** call: the wrapper built its query by
 joining the package path with slashes, which is not valid Rego, so the bundle was never

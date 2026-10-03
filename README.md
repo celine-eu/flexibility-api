@@ -37,8 +37,28 @@ task run
 
 ## Configuration
 
+### Posture: `CELINE_ENV=dev` is required for the dev defaults
+
+The defaults below are **development** defaults (the local database password, a client
+secret equal to the client id, the local Keycloak). They are accepted only when the
+process environment says `CELINE_ENV=dev` (or `ENVIRONMENT=dev`). **Unset means
+hardened**: so does `staging`, `prod` or anything else. Outside dev the service refuses
+to start (`InsecureConfiguration`, listing every offending variable) while any of them is
+still in use or the policy bundle did not load, and a policy engine that is missing or
+raises denies instead of allowing. See REQ-0011 and REQ-0055.
+
+- `task run` / `task debug` export `CELINE_ENV=dev` for you.
+- `CELINE_ENV=staging task run` is the prod-like local mode; set real values first.
+- The local `docker compose` api service passes no environment; a container started
+  that way is hardened.
+- The check reads the real process environment, not `.env` via pydantic.
+
+This needs `celine.sdk.posture`, which is **not yet in a released celine-sdk** — the
+next release after 1.24.0. Until then it works only against an editable SDK checkout.
+
 | Variable | Default | Description |
 |---|---|---|
+| `CELINE_ENV` | — (unset = hardened) | `dev` relaxes the posture checks; anything else is hardened |
 | `DATABASE_URL` | `postgresql+asyncpg://...host.docker.internal:15432/flexibility` | PostgreSQL async URL |
 | `DB_SCHEMA` | `flexibility` | Database schema |
 | `NUDGING_API_URL` | `http://host.docker.internal:8016` | nudging-tool URL |
@@ -48,7 +68,8 @@ task run
 | `DT_CLIENT_SCOPE` | — | OIDC scope for DT calls |
 | `REC_REGISTRY_SCOPE` | — | OIDC scope for registry calls |
 | `NUDGING_SCOPE` | — | OIDC scope for nudging calls |
-| `OIDC__*` | (from celine-sdk) | OIDC settings (audience: `svc-flexibility`) |
+| `CELINE_OIDC_*` | (from celine-sdk) | OIDC settings (audience and client id: `svc-flexibility`) — `CELINE_OIDC_BASE_URL` and `CELINE_OIDC_JWKS_URI` must be set outside dev |
+| `CELINE_OIDC_CLIENT_SECRET` | `svc-flexibility` (dev only) | Must differ from the client id outside dev |
 | `MQTT__*` | (from celine-sdk) | MQTT settings |
 
 ## Taskfile Commands

@@ -1,6 +1,6 @@
 # Operability
 
-Running, degrading, and the entry point that is not a request.
+Running, degrading, refusing to start, and the entry point that is not a request.
 
 `pipeline_listener` subscribes to `celine/pipelines/runs/+` and is **the only way work
 starts in this service that a participant did not ask for**. Nothing calls this service to
@@ -9,6 +9,29 @@ scheduled and commitments stop being settled — with no failing response anywhe
 notice.
 
 ---
+
+### REQ-0055 — outside development, the dev defaults refuse startup
+
+`core/config.py` ships zero-config development defaults on purpose: the local stack's
+database password, `CELINE_OIDC_CLIENT_SECRET` equal to the client id
+(`svc-flexibility`), and the SDK's local Keycloak as issuer and JWKS. They are safe only
+because the lifespan refuses them, **first** — before the MQTT broker is created and
+before the settlement fallback is scheduled — unless the environment is development.
+
+The signal is `celine.sdk.posture`'s: `CELINE_ENV`, then `ENVIRONMENT`; **only `dev`
+relaxes**. Unset, empty, `staging`, `prod` or a typo is hardened. `task run` exports
+`CELINE_ENV=dev`; `CELINE_ENV=staging task run` is the prod-like local mode.
+
+Outside dev, startup raises `InsecureConfiguration` naming every violation at once:
+
+- `DATABASE_URL` carries a development password (`securepassword123`, `postgres`, or a
+  trivially weak one);
+- `CELINE_OIDC_CLIENT_SECRET` is empty or equal to the client id;
+- `CELINE_OIDC_BASE_URL` / `CELINE_OIDC_JWKS_URI` were not set, so the SDK's local
+  default is in use;
+- the policy bundle (`policies/flexibility.rego`) did not load — REQ-0011.
+
+In dev the same values are logged as one warning and startup proceeds.
 
 ### REQ-0051 — a message this service cannot use is dropped, not raised
 

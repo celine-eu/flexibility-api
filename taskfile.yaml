@@ -9,12 +9,12 @@ tasks:
   run:
     desc: Run development server
     cmds:
-      - uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
+      - CELINE_ENV=${CELINE_ENV:-dev} uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
 
   debug:
     desc: Run development server with debugger
     cmds:
-      - LOG_LEVEL=DEBUG DEBUG_ATTACH=nowait DEBUG_PORT=48017 uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
+      - CELINE_ENV=${CELINE_ENV:-dev} LOG_LEVEL=DEBUG DEBUG_ATTACH=nowait DEBUG_PORT=48017 uv run uvicorn celine.flexibility.main:create_app --factory --reload --host 0.0.0.0 --port 8017
 
   test:
     desc: Run tests

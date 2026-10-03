@@ -13,8 +13,10 @@ dependencies = [
   "asyncpg>=0.30.0",
   "alembic>=1.13.0",
   "python-dotenv>=1.0",
-  "PyJWT[cryptography]>=2.8.0",
+  "PyJWT[crypto]>=2.14",
   "httpx>=0.28.0",
+  # TODO(posture): celine.sdk.posture (security/posture.py, security/policy.py) is not in
+  # a released celine-sdk yet. Raise this floor to the first release that ships it.
   "celine-sdk>=1.20.0",
 ]
 

@@ -1,12 +1,16 @@
 """OPA access policy for the flexibility API.
 
 Evaluates decisions using the celine.sdk.policies engine loaded from
-./policies/flexibility.rego.  Falls back to permissive if policies are
-not configured (dev/test convenience).
+./policies/flexibility.rego.
+
+**Fails closed outside development.** A missing engine or an `allow` evaluation that
+raises is a denial unless ``CELINE_ENV=dev`` (``celine.sdk.posture``); a missing
+engine also refuses startup there (``security/posture.py``). Only in dev do both
+degrade to an allow with a warning.
 
 `PolicyEngine.evaluate()` takes a **Rego query**, not a package name — passing
-"celine/flexibility/access" made every evaluation raise, and the permissive fallback
-below turned every raise into an allow.  Queries are therefore built as
+"celine/flexibility/access" made every evaluation raise, and the then-unconditional
+permissive fallback turned every raise into an allow.  Queries are therefore built as
 `data.<dotted package>.<rule>`, which is what the SDK's own `evaluate_decision` does
 internally.
 
@@ -24,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from celine.sdk.auth.jwt import extract_groups
+from celine.sdk.posture import is_dev
 from fastapi import Request
 
 logger = logging.getLogger(__name__)
@@ -44,6 +49,10 @@ class AccessPolicy:
     """Enforce OPA policies via celine.sdk.policies.PolicyEngine.
 
     Loaded once at startup; decisions are cached per request input hash.
+
+    When the engine is unavailable or the `allow` evaluation raises, the decision is a
+    denial unless ``CELINE_ENV=dev``, where it is an allow with a warning. The posture
+    is read per decision, not at construction.
     """
 
     def __init__(self) -> None:
@@ -87,15 +96,28 @@ class AccessPolicy:
             return None
         return reason if isinstance(reason, str) else None
 
+    @property
+    def loaded(self) -> bool:
+        """True when a Rego bundle is loaded and decisions are real."""
+        return self._engine is not None
+
     async def _evaluate(self, input_data: dict) -> Decision:
         if self._engine is None:
-            logger.warning("No policy engine — allowing %r", input_data.get("action"))
-            return Decision(True, "no-policy-engine")
+            if is_dev():
+                logger.warning(
+                    "No policy engine — allowing %r (CELINE_ENV=dev)", input_data.get("action")
+                )
+                return Decision(True, "no-policy-engine")
+            logger.error("No policy engine — denying %r (fail closed)", input_data.get("action"))
+            return Decision(False, "no-policy-engine")
         try:
             allowed = self._value(self._engine.evaluate(f"data.{_PACKAGE}.allow", input_data))
         except Exception as exc:
-            logger.warning("OPA evaluation error: %s", exc)
-            return Decision(True, "policy-error-permissive")
+            if is_dev():
+                logger.warning("OPA evaluation error, allowing (CELINE_ENV=dev): %s", exc)
+                return Decision(True, "policy-error-permissive")
+            logger.error("OPA evaluation error, denying (fail closed): %s", exc)
+            return Decision(False, "policy-error")
         return Decision(allowed=allowed is True, reason=self._reason(input_data))
 
     async def allow_user_commitment(self, request: Request, user_id: str, action: str) -> Decision:

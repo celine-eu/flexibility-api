@@ -59,3 +59,10 @@ The input document is assembled by hand in the tests rather than taken from
 `AccessPolicy.allow_user_commitment`, because that method is unreachable — nothing calls
 it. Borrowing its shape would tie the tests to code no request executes. If a route starts
 calling it, the tests should switch to it.
+
+## Update — 2026-10-03
+
+The fallback is now **development-only** (NIS2 finding R23): outside `CELINE_ENV=dev` a
+missing bundle refuses startup and a missing or raising engine denies (REQ-0011,
+REQ-0055). The reasoning above still holds for the suite, which pins `CELINE_ENV=dev` and
+therefore still runs with the permissive fallback in reach.

@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from celine.flexibility.core.config import settings
 from celine.flexibility.routes import register_routes
 from celine.flexibility.security.middleware import PolicyMiddleware
+from celine.flexibility.security.posture import enforce_posture
 from celine.flexibility.services.pipeline_listener import (
     create_broker,
     on_pipeline_run,
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting %s", settings.app_name)
+
+    # First, before any side effect: outside CELINE_ENV=dev the dev defaults and a
+    # missing policy bundle refuse startup (InsecureConfiguration).
+    enforce_posture()
 
     broker = create_broker()
     try:

@@ -94,17 +94,19 @@ like. A reason that cannot be read now costs the message and nothing else.
 The bundle loads from an absolute path derived from `__file__` rather than the working
 directory, so the service finds it wherever it is started from.
 
-**Fail-open remains, deliberately**, in two branches that are indistinguishable — from a
-response alone — from a policy that ran and permitted:
+**Outside development the two fallback branches fail closed**; only `CELINE_ENV=dev`
+(see REQ-0055) keeps them permissive:
 
-- the bundle did not load — `Decision(True, "no-policy-engine")`
-- the `allow` evaluation raised — `Decision(True, "policy-error-permissive")`
+| | outside dev (unset included) | `CELINE_ENV=dev` |
+|---|---|---|
+| the bundle did not load | `Decision(False, "no-policy-engine")`, and startup is refused (REQ-0055) | `Decision(True, "no-policy-engine")` + warning |
+| the `allow` evaluation raised | `Decision(False, "policy-error")` | `Decision(True, "policy-error-permissive")` + warning |
 
-Neither is reached in normal operation any more. Whether authorisation should instead fail
-*closed* is an open product decision with a real operational cost — a bad bundle would
-take the service down rather than open it — and nobody has been asked. Until then the
-reason string is the only signal, and it is what a deployment intolerant of fail-open must
-alert on.
+Neither is reached in normal operation any more. Failing closed has a real operational
+cost — a bad bundle takes the service down rather than opening it — and that is the trade
+NIS2 finding R23 made (decided 2026-10-03; it was an open question until then). The dev
+allows remain indistinguishable, from a response alone, from a policy that ran and
+permitted; the reason string is the only signal there. The posture is read per decision.
 
 **The test suite refuses to run its policy tests unless the bundle loaded**, because
 otherwise every assertion about authorisation would pass for the wrong reason.

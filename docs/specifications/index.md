@@ -7,7 +7,7 @@ These were **distilled from the code, not written before it** — see
 something `flexibility-api` does today and something a reader would want to stay true;
 none is an aspiration.
 
-**All fifty-four are satisfied.** Two were not when they were first written — writing the
+**All fifty-five are satisfied.** Two were not when they were first written — writing the
 sentence out is what exposed the defect in each case — and both were fixed the same week:
 
 | | | |
@@ -55,7 +55,7 @@ same change.
 | REQ-0029 – REQ-0037 | [suggestions](suggestions.md) — what a participant is shown, and accepting |
 | REQ-0038 – REQ-0043 | [settlement](settlement.md) — what the commitment was finally worth |
 | REQ-0044 – REQ-0050 | [notifications](notifications.md) — reminders and opportunity nudges |
-| REQ-0051 – REQ-0053 | [operability](operability.md) — the MQTT entry point, and degrading |
+| REQ-0051 – REQ-0053, REQ-0055 | [operability](operability.md) — the MQTT entry point, degrading, and refusing dev defaults outside `CELINE_ENV=dev` |
 
 ## What is not here
 
