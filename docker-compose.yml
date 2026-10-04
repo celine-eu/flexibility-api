@@ -27,6 +27,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      # No development default: unset is hardened (celine.sdk.posture).
+      # celine-dev's docker tasks export CELINE_ENV=dev for the local stack.
+      CELINE_ENV: ${CELINE_ENV:-}
     ports:
       - "8017:8017"
     depends_on:
