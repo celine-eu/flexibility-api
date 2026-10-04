@@ -195,3 +195,25 @@ async def test_in_dev_the_lifespan_starts_with_the_same_settings(monkeypatch, si
         pass
 
     assert side_effects == ["create_broker", "settlement_fallback"]
+
+
+# The client identity comes from the environment when it is set. As constructor
+# arguments the local defaults overrode it, so a deployment could not name its client.
+def test_the_oidc_client_is_taken_from_the_environment(monkeypatch):
+    monkeypatch.setenv("CELINE_OIDC_CLIENT_ID", "svc-flexibility-example")
+    monkeypatch.setenv("CELINE_OIDC_CLIENT_SECRET", "a-real-secret")
+
+    oidc = Settings().oidc
+
+    assert oidc.client_id == "svc-flexibility-example"
+    assert oidc.client_secret == "a-real-secret"
+    assert oidc.audience == "svc-flexibility"
+
+
+def test_the_local_client_is_the_default(monkeypatch):
+    for name in ("CELINE_OIDC_CLIENT_ID", "CELINE_OIDC_CLIENT_SECRET", "CELINE_OIDC_AUDIENCE"):
+        monkeypatch.delenv(name, raising=False)
+
+    oidc = Settings().oidc
+
+    assert (oidc.client_id, oidc.client_secret, oidc.audience) == ("svc-flexibility",) * 3

@@ -202,3 +202,25 @@ async def test_a_real_service_token_is_decided_on_its_scope(client):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "missing flexibility scope"
+
+
+# @verifies REQ-0010
+async def test_the_export_scope_holder_reaches_export(client):
+    """`svc-pipelines` mirrors the table and holds `flexibility.commitments.export`."""
+    token = _service_token("svc-pipelines")
+
+    response = await client.get("/api/commitments/export", headers={HEADER: token})
+
+    assert response.status_code == 200
+
+
+# @verifies REQ-0010
+async def test_a_real_service_without_the_export_scope_is_refused_export(client):
+    """Until 2026-10-04 any service token read every commitment here. `svc-digital-twin`
+    holds flexibility MQTT scopes and not the export scope."""
+    token = _service_token("svc-digital-twin")
+    assert "flexibility.commitments.export" not in _verified(token).claims.get("scope", "")
+
+    response = await client.get("/api/commitments/export", headers={HEADER: token})
+
+    assert response.status_code == 403

@@ -32,7 +32,7 @@ def build_guard(
     ``env`` overrides the environment signal; ``None`` reads ``CELINE_ENV`` /
     ``ENVIRONMENT`` as the SDK does.
     """
-    from celine.flexibility.security.policy import _POLICIES_DIR
+    from celine.flexibility.security.policy import policies_dir
 
     guard = PostureGuard(SERVICE, env=env)
     guard.forbid_dev_database_url("DATABASE_URL", cfg.database_url)
@@ -43,9 +43,10 @@ def build_guard(
     if not policy_loaded:
         guard.add(
             "policies/",
-            f"no policy bundle loaded from {_POLICIES_DIR} — outside dev every "
+            f"no policy bundle loaded from {policies_dir()} — outside dev every "
             "authorisation decision would be a denial",
-            "Ship policies/flexibility.rego with the service.",
+            "Install the wheel (it carries policies/), or point "
+            "CELINE_POLICIES_POLICIES_DIR at the bundle.",
         )
     return guard
 

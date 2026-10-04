@@ -6,6 +6,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from celine.sdk.settings.models import OidcSettings, MqttSettings
 
 
+_LOCAL_OIDC_DEFAULTS = {
+    "audience": "svc-flexibility",
+    "client_id": "svc-flexibility",
+    "client_secret": "svc-flexibility",
+}
+
+
+def _oidc_with_local_defaults() -> OidcSettings:
+    unset = {
+        field: value
+        for field, value in _LOCAL_OIDC_DEFAULTS.items()
+        if not os.environ.get(f"CELINE_OIDC_{field.upper()}")
+    }
+    return OidcSettings(**unset)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -19,12 +35,11 @@ class Settings(BaseSettings):
     )
     db_schema: str = "flexibility"
 
-    # OIDC — driven by CELINE_OIDC_* env vars; defaults work for local dev
-    oidc: OidcSettings = OidcSettings(
-        audience="svc-flexibility",
-        client_id="svc-flexibility",
-        client_secret=os.getenv("CELINE_OIDC_CLIENT_SECRET", "svc-flexibility"),
-    )
+    # OIDC — driven by CELINE_OIDC_* env vars; the local realm's identity is the
+    # default for whatever the environment does not set. Passed as constructor
+    # arguments these would override the environment, so the client could not be
+    # configured at all (security/posture.py refuses the dev secret outside dev).
+    oidc: OidcSettings = Field(default_factory=lambda: _oidc_with_local_defaults())
 
     # JWT header forwarded by oauth2-proxy
     jwt_header_name: str = "x-auth-request-access-token"

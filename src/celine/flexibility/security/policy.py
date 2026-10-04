@@ -1,7 +1,7 @@
 """OPA access policy for the flexibility API.
 
-Evaluates decisions using the celine.sdk.policies engine loaded from
-./policies/flexibility.rego.
+Evaluates decisions using the celine.sdk.policies engine loaded from the
+`flexibility.rego` bundle that `policies_dir()` finds.
 
 **Fails closed outside development.** A missing engine or an `allow` evaluation that
 raises is a denial unless ``CELINE_ENV=dev`` (``celine.sdk.posture``); a missing
@@ -28,6 +28,7 @@ the two levels are never merged into one list.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,26 @@ from fastapi import Request
 
 logger = logging.getLogger(__name__)
 
-_POLICIES_DIR = Path(__file__).parent.parent.parent.parent.parent / "policies"
+# Where the bundle is, first match wins. Never the working directory (REQ-0011):
+#   1. CELINE_POLICIES_POLICIES_DIR, when a deployment mounts its own bundle;
+#   2. the copy packaged into the wheel (`force-include` in pyproject.toml) — what an
+#      installed service, the image, has;
+#   3. the repository's `policies/`, for a source checkout (editable install, tests).
+# The image used to look only for 3, which resolves into site-packages there, so it
+# shipped `/app/policies` and never loaded it.
+_PACKAGED_POLICIES = Path(__file__).resolve().parent.parent / "policies"
+_CHECKOUT_POLICIES = Path(__file__).resolve().parents[4] / "policies"
+
+
+def policies_dir() -> Path:
+    """The bundle directory this process loads (see the order above)."""
+    configured = os.environ.get("CELINE_POLICIES_POLICIES_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    if _PACKAGED_POLICIES.is_dir():
+        return _PACKAGED_POLICIES
+    return _CHECKOUT_POLICIES
+
 
 # The package as Rego addresses it. The dots matter; slashes are not a package path.
 _PACKAGE = "celine.flexibility.access"
@@ -82,12 +102,13 @@ class AccessPolicy:
         try:
             from celine.sdk.policies import PolicyEngine  # type: ignore[import]
 
-            if _POLICIES_DIR.exists():
-                self._engine = PolicyEngine(policies_dir=str(_POLICIES_DIR))
+            directory = policies_dir()
+            if directory.is_dir():
+                self._engine = PolicyEngine(policies_dir=str(directory))
                 self._engine.load()
-                logger.info("OPA policy engine loaded from %s", _POLICIES_DIR)
+                logger.info("OPA policy engine loaded from %s", directory)
             else:
-                logger.warning("Policies dir %s not found — running without OPA", _POLICIES_DIR)
+                logger.warning("Policies dir %s not found — running without OPA", directory)
         except ImportError:
             logger.warning("celine.sdk.policies not available — running without OPA")
 

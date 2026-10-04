@@ -327,8 +327,8 @@ def test_every_reason_is_single_valued(engine, case, subject, action, is_service
 # @verifies REQ-0011
 def test_the_bundle_loads_from_an_absolute_path(policy_engine):
     """
-    `_POLICIES_DIR` is derived from `__file__`, not from the working directory, so the
-    bundle is found wherever pytest was invoked from. A relative path here would make
+    `policies_dir()` never consults the working directory, so the bundle is found
+    wherever pytest was invoked from (`test_bundle_location.py` holds the order). A relative path here would make
     the whole service fail open when started from anywhere but the repository root — and
     it would do it silently.
     """

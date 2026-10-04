@@ -157,11 +157,10 @@ returns nothing (REQ-0026).
 - `created_after` — ISO datetime, filters on `committed_at`. URL-encode it: the `+00:00`
   offset decodes to a space otherwise and the request is a `422`.
 
-The `flexibility.commitments.export` scope the policy defines is **not enforced on this
-route** — `PolicyMiddleware` does not match this path, so any service token reaches every
-commitment in the table (REQ-0028). Unlike `/pending` and `/settle`, this one was not
-closed by [#21](https://github.com/celine-eu/flexibility-api/issues/21); it is a routing
-gap, not an evaluation one.
+Requires the `flexibility.commitments.export` scope (REQ-0010, REQ-0028):
+`PolicyMiddleware` decides it as the `export` action. A service token without it is
+`403 missing flexibility scope` (or `403 access denied` when it holds other flexibility
+scopes); a participant is `403 not-a-service-account`.
 
 ---
 

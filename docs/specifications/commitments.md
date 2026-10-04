@@ -102,9 +102,9 @@ optional `created_after` filter on that column.
 It is scoped to nobody. Declines are included — the acceptance rate is only computable
 because `rejected` rows are kept.
 
-The `flexibility.commitments.export` scope the bundle demands (REQ-0010) is **not
-checked**: `PolicyMiddleware` does not match this path, so any service token reads the
-whole table.
+Only a service token holding `flexibility.commitments.export` reaches it: `PolicyMiddleware`
+decides the path as the `export` action (REQ-0010). Until 2026-10-04 the middleware did
+not match it, and any service token in the realm read the whole table.
 
 `created_after` takes an ISO timestamp, which ends in `+00:00`, and a `+` in a query
 string decodes to a space. A caller that concatenates the URL by hand gets a `422` rather

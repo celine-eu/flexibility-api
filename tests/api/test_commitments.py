@@ -455,23 +455,33 @@ async def test_settling_is_refused_to_an_unscoped_service_account(
 
 
 # @verifies REQ-0028
-async def test_export_is_still_reachable_by_any_service_account(
+async def test_export_is_refused_to_a_service_account_without_the_export_scope(
     client, unscoped_service, db
 ):
     """
-    Not a fix — a gap that survives #21 and is stated as it is.
-
-    `/export` returns every commitment of every participant, and `PolicyMiddleware` does
-    not match its path, so the bundle is never consulted for it. The
-    `flexibility.commitments.export` scope (REQ-0010) is defined and unenforced: the
-    `ServiceDep` is the whole check, and this caller passes it.
+    `/export` returns every commitment of every participant. Until 2026-10-04
+    `PolicyMiddleware` did not match its path, so any service token in the realm read the
+    whole table; it is now decided as the `export` action (REQ-0010).
     """
     await row(db)
 
     response = await client.get("/api/commitments/export", headers=unscoped_service)
 
-    assert response.status_code == 200
-    assert len(response.json()) == 1
+    assert response.status_code == 403
+    assert response.json()["detail"] == "missing flexibility scope"
+
+
+# @verifies REQ-0010
+async def test_export_is_refused_to_flexibility_admin_without_the_export_scope(
+    client, jwt, db
+):
+    """The export scope is separate; `flexibility.admin` does not reach it."""
+    await row(db)
+    admin = jwt.headers(make_service(scope="flexibility.read flexibility.admin"))
+
+    response = await client.get("/api/commitments/export", headers=admin)
+
+    assert response.status_code == 403
 
 
 # @verifies REQ-0014
@@ -611,18 +621,15 @@ async def test_export_returns_every_participant_and_every_status(client, service
 # @verifies REQ-0013
 async def test_export_is_refused_to_a_participant(client, alice, db):
     """
-    Every commitment of every participant, behind one route. `PolicyMiddleware` does not
-    guard this path at all — it matches only `/pending` and `PATCH …/settle` — so the
-    `ServiceDep` is the whole of the check, and the `flexibility.commitments.export`
-    scope the Rego demands (REQ-0010) is never consulted. **Any** service token reaches
-    every commitment in the table.
+    Every commitment of every participant, behind one route: a participant is refused
+    by `PolicyMiddleware` before the bundle is asked, as on the other service routes.
     """
     await row(db)
 
     response = await client.get("/api/commitments/export", headers=alice)
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Service account required"
+    assert response.json()["detail"] == "not-a-service-account"
 
 
 # @verifies REQ-0028

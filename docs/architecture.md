@@ -84,7 +84,8 @@ from the models, so a model that has drifted from its migrations passes everythi
 ## Authorisation
 
 `policies/flexibility.rego` is evaluated **in process** by `celine.sdk.policies` — no OPA
-server. It is reached from exactly one place, `PolicyMiddleware`, guarding two routes.
+server. It is reached from exactly one place, `PolicyMiddleware`, guarding three routes.
+The bundle is packaged into the wheel, so the image loads it from the installed package.
 
 Everything else is SQL: the participant-facing routes never consult a policy, and
 `WHERE user_id = :sub` is the whole of the separation between two participants.

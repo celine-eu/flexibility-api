@@ -4,7 +4,7 @@ Two mechanisms, and they cover different things.
 
 **`policies/flexibility.rego`**, evaluated in process, is the specification of record for
 what a subject may do — and it is reached from exactly one place, `PolicyMiddleware`,
-guarding two routes. REQ-0005 to REQ-0010 state what the bundle decides; REQ-0054 states
+guarding three routes (`/pending`, `PATCH …/settle`, `/export`). REQ-0005 to REQ-0010 state what the bundle decides; REQ-0054 states
 that a request actually gets that answer; REQ-0056 states what the bundle is told about
 the caller.
 
@@ -73,9 +73,9 @@ change one. A service account with no flexibility scope at all is refused with
 The scope is separate because the blast radius is: `GET /api/commitments/export` returns
 every commitment of every participant in every status, which no other route does.
 
-**The route does not check it.** `PolicyMiddleware` guards only `/pending` and
-`PATCH …/settle`, so export is held by its `ServiceDep` alone and any service token
-reaches it — see REQ-0028.
+`PolicyMiddleware` decides `GET /api/commitments/export` as the `export` action. Until
+2026-10-04 it guarded only `/pending` and `PATCH …/settle`, so export was held by its
+`ServiceDep` alone and any service token reached it.
 
 ### REQ-0011 — a decision the bundle makes reaches the caller
 
@@ -92,8 +92,12 @@ was never consulted on any call
 is a message; an allow is an authorisation, and REQ-0012 is what a broken message looks
 like. A reason that cannot be read now costs the message and nothing else.
 
-The bundle loads from an absolute path derived from `__file__` rather than the working
-directory, so the service finds it wherever it is started from.
+The bundle never loads from the working directory, so the service finds it wherever it
+is started from. `policies_dir()` takes `CELINE_POLICIES_POLICIES_DIR` when set, then the
+copy packaged into the wheel (`celine/flexibility/policies`, pyproject `force-include`),
+then the repository's `policies/` for a source checkout. Until 2026-10-04 only the last
+existed, and in the image it resolved into site-packages: the image shipped
+`/app/policies` and never loaded it.
 
 **Outside development the two fallback branches fail closed**; only `CELINE_ENV=dev`
 (see REQ-0055) keeps them permissive:
@@ -139,14 +143,14 @@ now redundant with a working policy — REQ-0009 would refuse the same caller. I
 deleting a check that worked, on the strength of one that was broken until today, is not
 a trade worth making.
 
-`GET /api/commitments/export` is refused to a participant too, by its `ServiceDep` rather
-than the middleware — a different mechanism reaching the same status, with a different
-detail string (`Service account required`).
+`GET /api/commitments/export` is refused to a participant the same way
+(`not-a-service-account`); its `ServiceDep` stays behind the middleware as a second gate.
 
 ### REQ-0054 — a guarded route enforces the scope, not just the account type
 
 A service account holding no flexibility scope is refused on
-`GET /api/commitments/pending` and `PATCH /api/commitments/{id}/settle` with
+`GET /api/commitments/pending`, `PATCH /api/commitments/{id}/settle` and
+`GET /api/commitments/export` with
 `403 missing flexibility scope` — the bundle's own reason, carried out to the response
 body.
 
@@ -155,8 +159,6 @@ separately from REQ-0009 because the bundle deciding correctly and a request bei
 are two different claims. Until #21 was fixed only the first was true: **any** valid
 Keycloak service token, belonging to any client in the realm, reached both routes.
 
-It does **not** extend to `/export`, which the middleware does not match at all — see
-REQ-0028.
 
 ### REQ-0014 — a missing token on a guarded route is a `403`, not a `401`
 
