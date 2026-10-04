@@ -19,6 +19,11 @@ internally.
 commitment, and whose subject shape (`type: "service"`) is not the one this bundle is
 written against (`is_service: true`).  Adopting it would mean rewriting the .rego rather
 than fixing a malformed query.
+
+**What the bundle is told about the caller** (REQ-0056) is ``subject_document``: id,
+account type, scopes and realm roles. Platform roles travel in ``subject.roles``; there
+is no ``groups`` key, so no realm group and no organisation group reaches the bundle, and
+the two levels are never merged into one list.
 """
 from __future__ import annotations
 
@@ -27,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from celine.sdk.auth.jwt import extract_groups
+from celine.sdk.auth import JwtUser, realm_roles
 from celine.sdk.posture import is_dev
 from fastapi import Request
 
@@ -37,6 +42,23 @@ _POLICIES_DIR = Path(__file__).parent.parent.parent.parent.parent / "policies"
 
 # The package as Rego addresses it. The dots matter; slashes are not a package path.
 _PACKAGE = "celine.flexibility.access"
+
+
+def subject_document(user: JwtUser, *, is_service: bool | None = None) -> dict[str, Any]:
+    """The ``input.subject`` the bundle is evaluated against.
+
+    ``roles`` is the token's realm roles (``realm_access.roles``) and is the only
+    platform-level grant a token carries. No group is read — not the realm ``groups``
+    claim, which grants nothing, and not ``organization.<alias>.groups``, because no
+    request here concerns an organisation. ``is_service`` defaults to the SDK's
+    classification of the token.
+    """
+    return {
+        "id": user.sub,
+        "is_service": user.is_service_account if is_service is None else is_service,
+        "scopes": (user.claims.get("scope") or "").split(),
+        "roles": realm_roles(user.claims),
+    }
 
 
 @dataclass(frozen=True)
@@ -122,7 +144,6 @@ class AccessPolicy:
 
     async def allow_user_commitment(self, request: Request, user_id: str, action: str) -> Decision:
         """Check if the caller may read/write a commitment belonging to user_id."""
-        from celine.sdk.auth import JwtUser
         from celine.flexibility.security.auth import get_user_from_request
 
         try:
@@ -136,18 +157,12 @@ class AccessPolicy:
                 "type": "flexibility.commitment",
                 "attributes": {"owner_id": user_id},
             },
-            "subject": {
-                "id": user.sub,
-                "is_service": user.is_service_account,
-                "scopes": (user.claims.get("scope") or "").split(),
-                "groups": extract_groups(user.claims),
-            },
+            "subject": subject_document(user),
         }
         return await self._evaluate(input_data)
 
     async def allow_service(self, request: Request, action: str) -> Decision:
         """Check if the caller is a service account with adequate scope."""
-        from celine.sdk.auth import JwtUser
         from celine.flexibility.security.auth import get_user_from_request
 
         try:
@@ -161,11 +176,6 @@ class AccessPolicy:
         input_data = {
             "action": {"name": action},
             "resource": {"type": "flexibility.commitment"},
-            "subject": {
-                "id": user.sub,
-                "is_service": True,
-                "scopes": (user.claims.get("scope") or "").split(),
-                "groups": [],
-            },
+            "subject": subject_document(user, is_service=True),
         }
         return await self._evaluate(input_data)

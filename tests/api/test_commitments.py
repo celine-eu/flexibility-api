@@ -20,7 +20,7 @@ from sqlalchemy import select
 from celine.flexibility.models.commitment import FlexibilityCommitment
 
 from tests.conftest import COMMUNITY, OTHER_SUB, USER_SUB
-from tests.fakes import make_user
+from tests.fakes import make_service, make_user
 
 NOW = datetime.now(timezone.utc)
 
@@ -383,6 +383,53 @@ async def test_a_scoped_service_account_still_reaches_the_guarded_routes(
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [str(commitment.id)]
+
+
+# @verifies REQ-0056
+async def test_a_platform_admin_participant_is_still_not_a_service(client, jwt, db):
+    """
+    `platform-admin`, an organisation's `admins` and the realm `/admins` group of an
+    old token, all on one participant token: none of them turns a person into a service,
+    so the guarded route refuses it exactly as it refuses Alice.
+    """
+    await row(db, starts_in=timedelta(hours=-1), ends_in=timedelta(hours=1))
+    everything = make_user(
+        sub=OTHER_SUB,
+        scope="flexibility.read flexibility.admin",
+        preferred_username="admin",
+        groups=["/admins", "admins"],
+        realm_access={"roles": ["platform-admin", "admin"]},
+        organization={"example-rec": {"type": ["rec"], "groups": ["/admins"]}},
+    )
+
+    response = await client.get("/api/commitments/pending", headers=jwt.headers(everything))
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "not-a-service-account"
+
+
+# @verifies REQ-0056
+async def test_platform_admin_does_not_stand_in_for_a_scope_on_a_service_token(
+    client, jwt, db
+):
+    """
+    A service account whose token carries `platform-admin` in `realm_access` and no
+    flexibility scope: the bundle receives the role and is refused on scope — the role
+    is carried, and it grants nothing here.
+    """
+    commitment = await row(db)
+    svc = make_service(client_id="svc-unrelated", scope="openid grid.read")
+    svc.claims["realm_access"] = {"roles": ["platform-admin"]}
+
+    response = await client.patch(
+        f"/api/commitments/{commitment.id}/settle",
+        json={"reward_points_actual": 9999},
+        headers=jwt.headers(svc),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "missing flexibility scope"
+    assert (await stored(db, commitment.id)).reward_points_actual is None
 
 
 # @verifies REQ-0054

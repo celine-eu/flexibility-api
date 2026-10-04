@@ -5,7 +5,8 @@ Two mechanisms, and they cover different things.
 **`policies/flexibility.rego`**, evaluated in process, is the specification of record for
 what a subject may do — and it is reached from exactly one place, `PolicyMiddleware`,
 guarding two routes. REQ-0005 to REQ-0010 state what the bundle decides; REQ-0054 states
-that a request actually gets that answer.
+that a request actually gets that answer; REQ-0056 states what the bundle is told about
+the caller.
 
 **Everything else is SQL.** No participant-facing route consults the policy at all. The
 separation between Alice's commitments and Bob's is `WHERE user_id = :sub` in
@@ -168,3 +169,32 @@ not enough" on the two guarded routes, and a proxy that refreshes on `401` will 
 refresh here.
 
 Stated because it is surprising, not because it is right.
+
+### REQ-0056 — the policy input carries platform roles apart, and no group grants anything
+
+The subject document `AccessPolicy` hands the bundle is `id`, `is_service`, `scopes` and
+`roles`, and nothing else:
+
+- `roles` is the token's **realm roles** (`realm_access.roles`, read with
+  `celine.sdk.auth.realm_roles`). It is the only platform-level grant a token can carry;
+  `platform-admin` is the one that means anything platform-wide.
+- There is **no `groups` key**. Neither the realm `groups` claim nor any organisation's
+  `organization.<alias>.groups` is read, and the two are never merged into one list. No
+  request here concerns an organisation — a commitment belongs to a participant — so there is
+  no organisation whose groups could apply.
+
+The bundle decides on ownership, account type and scope (REQ-0006 to REQ-0010) and on
+nothing else, so:
+
+- an organisation's `admins` member is **not** a platform administrator and gains nothing
+  here;
+- a `platform-admin` holder is a platform administrator — `subject.roles` says so — and
+  still gains nothing here: this service has no platform-wide operation, so the bundle has
+  no rule that reads the role;
+- a realm group still present in a token (`groups: ["/admins", "admins"]`, the shape
+  tokens had before realm groups were removed) grants nothing and is not read.
+
+Before 2026-10-03 the input carried `groups` built with `celine.sdk.auth.extract_groups`,
+the realm groups merged with every organisation's groups. The bundle never read it, so
+removing it changes no decision; it removes a list that would have let one community's
+group act as another's, or as the platform's, the day a rule did read it.

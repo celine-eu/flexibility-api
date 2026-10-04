@@ -17,6 +17,8 @@ dependencies = [
   "httpx>=0.28.0",
   # TODO(posture): celine.sdk.posture (security/posture.py, security/policy.py) is not in
   # a released celine-sdk yet. Raise this floor to the first release that ships it.
+  # TODO(platform-admin): security/policy.py imports celine.sdk.auth.realm_roles, first
+  # shipped in celine-sdk 2.0.0 (unreleased). Raise to >=2.0.0 and re-lock on release.
   "celine-sdk>=1.20.0",
 ]
 

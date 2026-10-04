@@ -12,6 +12,9 @@ load, so a suite that faked the engine and a suite whose engine silently failed 
 would produce identical passes. See
 `docs/decisions/ADR-0002-the-policy-bundle-is-real-in-tests.md`.
 
+`tests/integration/` is opt-in and skipped by default: with `FLEXIBILITY_IT_KEYCLOAK=1` it
+mints real tokens from a *local* Keycloak (REQ-0056). See the ADR-0004 addendum.
+
 The environment is set *before* `celine.flexibility` is imported anywhere. `config.py`
 builds its `Settings()` at import time and `db/session.py` builds the engine from it, so
 by the time a test module is collected the wiring has already happened and cannot be

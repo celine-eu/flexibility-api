@@ -10,6 +10,11 @@ import rego.v1
 default allow := false
 default reason := "access denied"
 
+# input.subject = {id, is_service, scopes, roles}. `roles` is the token's realm roles
+# (`platform-admin` is the platform-wide one); there is no `groups`. No rule here reads
+# either: this service has no platform-wide operation and no request concerns an
+# organisation, so ownership, account type and scope decide everything (REQ-0056).
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 is_owner if {

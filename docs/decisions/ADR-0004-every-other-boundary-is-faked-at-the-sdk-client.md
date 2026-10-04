@@ -53,3 +53,12 @@ non-delivery is stated in REQ-0051 to REQ-0053 and verified by nothing.
 
 Closing the gap needs contract tests against a pinned `celine-sdk`, or the SDK publishing
 example payloads the consumers can assert against. Neither exists.
+
+## Addendum — 2026-10-03: real tokens, opt-in
+
+`tests/integration/test_real_tokens.py` verifies REQ-0056 with tokens a **local** Keycloak
+signs: `JwtUser.from_token` runs for real against the realm's JWKS and nothing in the
+identity path is faked. It is skipped unless `FLEXIBILITY_IT_KEYCLOAK=1`, so the default
+run still needs nothing running, and it refuses any issuer that is not a `.localhost` or
+loopback host. It is the one place the suite observes the token shapes the SDK reads,
+rather than shapes written here.

@@ -42,6 +42,7 @@ def _input(
     owner_id: str | None = OWNER,
     is_service: bool = False,
     scopes: list[str] | None = None,
+    roles: list[str] | None = None,
 ) -> dict:
     """The input document `AccessPolicy` builds, assembled by hand.
 
@@ -59,7 +60,7 @@ def _input(
             "id": subject_id,
             "is_service": is_service,
             "scopes": scopes if scopes is not None else [],
-            "groups": [],
+            "roles": roles if roles is not None else [],
         },
     }
 
@@ -472,3 +473,153 @@ async def test_an_unreadable_reason_does_not_change_the_decision(policy_engine, 
 
     assert decision.allowed is False
     assert decision.reason is None
+
+
+# ---------------------------------------------------------------------------
+# What the bundle is told about the caller — REQ-0056
+# ---------------------------------------------------------------------------
+#
+# Claim shapes as the local Keycloak issues them through `oauth2_proxy`, before and after
+# realm groups were removed. `LEGACY_ADMIN` is the old shape of a realm-`/admins` member:
+# the `groups` claim in both forms (the scope mapper's path and the client mapper's bare
+# name) and the realm role the old group carried. `tests/integration/test_real_tokens.py`
+# is the same set of claims, signed.
+
+LEGACY_ADMIN = {
+    "preferred_username": "legacy-admin",
+    "groups": ["/admins", "admins"],
+    "realm_access": {"roles": ["admin"]},
+    "organization": {"example-rec": {"type": ["rec"], "groups": ["/admins"]}},
+}
+PLATFORM_ADMIN = {
+    "preferred_username": "admin",
+    "realm_access": {"roles": ["platform-admin"]},
+    "organization": {"example-rec": {"type": ["rec"], "groups": ["/admins"]}},
+}
+ORG_ADMIN = {
+    "preferred_username": "org-admin",
+    "realm_access": {"roles": ["default-roles-celine", "offline_access", "uma_authorization"]},
+    "organization": {"example-rec": {"type": ["rec"], "groups": ["/admins"]}},
+}
+
+
+def _person(sub: str, claims: dict, scope: str = "flexibility.read"):
+    from tests.fakes import make_user
+
+    return make_user(sub=sub, scope=scope, **claims)
+
+
+# @verifies REQ-0056
+def test_the_subject_carries_realm_roles_and_no_groups():
+    """
+    `roles` is `realm_access.roles` and nothing else; there is no `groups` key at all,
+    so neither a realm group nor any organisation's groups can reach the bundle — and the
+    two levels are never merged into one list, which is what `extract_groups` did.
+    """
+    from celine.flexibility.security.policy import subject_document
+
+    platform = subject_document(_person(STRANGER, PLATFORM_ADMIN))
+    org = subject_document(_person(STRANGER, ORG_ADMIN))
+    legacy = subject_document(_person(STRANGER, LEGACY_ADMIN))
+
+    assert set(platform) == {"id", "is_service", "scopes", "roles"}
+    assert platform["roles"] == ["platform-admin"]
+    assert "platform-admin" not in org["roles"]
+    assert "admins" not in org["roles"] and "/admins" not in org["roles"]
+    # A realm group still in a token is not read: only the realm role list travels.
+    assert legacy["roles"] == ["admin"]
+    for subject in (platform, org, legacy):
+        assert "groups" not in subject
+        assert subject["is_service"] is False
+
+
+# @verifies REQ-0056
+def test_a_service_subject_carries_no_roles_it_does_not_hold():
+    from celine.flexibility.security.policy import subject_document
+    from tests.fakes import make_service
+
+    subject = subject_document(make_service(scope="flexibility.read"), is_service=True)
+
+    assert subject == {
+        "id": "service-account-svc-flexibility",
+        "is_service": True,
+        "scopes": ["flexibility.read"],
+        "roles": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [PLATFORM_ADMIN, ORG_ADMIN, LEGACY_ADMIN],
+    ids=["platform-admin", "org-admins", "legacy-realm-admins"],
+)
+# @verifies REQ-0056
+def test_no_role_and_no_group_reaches_another_participants_commitment(engine, claims):
+    """
+    The bundle reads ownership, account type and scope. A platform administrator, an
+    organisation's `admins` and a token still carrying the realm `/admins` group are all
+    strangers to Alice's commitment.
+    """
+    from celine.flexibility.security.policy import subject_document
+
+    subject = subject_document(_person(STRANGER, claims))
+    out = decide(engine, {
+        "action": {"name": "read"},
+        "resource": {"type": "flexibility.commitment", "attributes": {"owner_id": OWNER}},
+        "subject": subject,
+    })
+
+    assert out["allow"] is False
+    assert out["reason"] == "not resource owner"
+
+
+# @verifies REQ-0056
+def test_platform_admin_does_not_stand_in_for_a_scope(engine):
+    """
+    `platform-admin` is in `subject.roles` and still grants nothing here: a service
+    account holding it and no flexibility scope is refused, and so is a participant who
+    holds it on their own commitment without a scope.
+    """
+    service = _input(
+        subject_id="svc", action="service", owner_id=None, is_service=True,
+        scopes=[], roles=["platform-admin"],
+    )
+    owner = _input(subject_id=OWNER, scopes=[], roles=["platform-admin"])
+
+    assert decide(engine, service)["reason"] == "missing flexibility scope"
+    assert decide(engine, service)["allow"] is False
+    assert decide(engine, owner)["reason"] == "missing flexibility scope"
+    assert decide(engine, owner)["allow"] is False
+
+
+# @verifies REQ-0056
+async def test_allow_user_commitment_builds_the_two_level_subject(policy_engine, jwt, monkeypatch):
+    """
+    The wiring: `allow_user_commitment` evaluates the subject `subject_document` builds
+    and the bundle's decision comes back. Captured at `_evaluate`, so a later edit that
+    puts a `groups` list back into the input fails here.
+    """
+    from starlette.requests import Request
+
+    token = jwt.mint(_person(STRANGER, LEGACY_ADMIN))
+    request = Request({
+        "type": "http", "method": "GET", "path": "/", "query_string": b"",
+        "headers": [(b"x-auth-request-access-token", token.encode())],
+    })
+    policy = AccessPolicy()
+    seen: list[dict] = []
+    real = policy._evaluate
+
+    async def _capture(input_data):
+        seen.append(input_data)
+        return await real(input_data)
+
+    monkeypatch.setattr(policy, "_evaluate", _capture)
+
+    decision = await policy.allow_user_commitment(request, OWNER, "read")
+
+    assert decision.allowed is False
+    assert decision.reason == "not resource owner"
+    assert seen[0]["subject"] == {
+        "id": STRANGER, "is_service": False, "scopes": ["flexibility.read"], "roles": ["admin"],
+    }

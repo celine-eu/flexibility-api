@@ -78,7 +78,7 @@ next release after 1.24.0. Until then it works only against an editable SDK chec
 |---|---|
 | `task run` | Start dev server on port 8017 |
 | `task debug` | Start with debugger (port 48017) |
-| `task test` | Run pytest |
+| `task test` | Run pytest (needs nothing running; `FLEXIBILITY_IT_KEYCLOAK=1` adds the real-token tests against a local Keycloak) |
 | `task alembic:migrate` | Apply pending migrations |
 | `task alembic:sync-model` | Generate new migration |
 | `task alembic:check` | Fail if the models have drifted from the migrations |

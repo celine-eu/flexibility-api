@@ -126,7 +126,7 @@ jobs:
                   "action": {"name": action},
                   "resource": resource,
                   "subject": {"id": sub, "is_service": is_service,
-                              "scopes": scopes, "groups": []},
+                              "scopes": scopes, "roles": []},
               }
               result = engine.evaluate(f"data.{_PACKAGE}", document)
               value = result["result"][0]["expressions"][0]["value"]
