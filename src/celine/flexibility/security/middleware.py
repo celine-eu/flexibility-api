@@ -2,8 +2,36 @@ from celine.sdk.audit import audit_denied
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from starlette.routing import Host, Match, Mount
 
 from .policy import AccessPolicy
+
+
+def route_template(request: Request) -> str | None:
+    """The template of the route this request will reach, or ``None``.
+
+    The middleware refuses before routing, so the request carries no matched route
+    yet. This resolves it the way the router will: the first route matching the
+    path and the method, else the first matching the path alone (the router answers
+    that one ``405``). It is the template (``/api/commitments/{commitment_id}/settle``),
+    never the raw path, which carries commitment ids. A path no route serves, or one
+    under a mount, gives ``None``: the record then carries no route, as before
+    routing (REQ-0057).
+    """
+    router = getattr(request.scope.get("app"), "router", None)
+    found = None
+    for route in getattr(router, "routes", ()):
+        template = getattr(route, "path_format", None)
+        if not template or isinstance(route, (Mount, Host)):
+            continue
+        # A regex match on the path and a method check: no handler, no dependency.
+        match, _ = route.matches(request.scope)
+        if match is Match.FULL:
+            found = template
+            break
+        if match is Match.PARTIAL and found is None:
+            found = template
+    return (request.scope.get("root_path") or "") + found if found else None
 
 
 class PolicyMiddleware(BaseHTTPMiddleware):
@@ -33,8 +61,14 @@ class PolicyMiddleware(BaseHTTPMiddleware):
             d = await self.policy.allow_service(request, action)
             if not d.allowed:
                 # Returned, not raised, so recorded here (REQ-0057). No route has been
-                # matched yet: the record carries the method and no route.
-                audit_denied(audited, caller=d.caller, reason=d.reason, request=request)
+                # matched yet, so the record names the template the router will match.
+                audit_denied(
+                    audited,
+                    caller=d.caller,
+                    reason=d.reason,
+                    request=request,
+                    route=route_template(request),
+                )
                 return JSONResponse(
                     {"detail": d.reason or "Service access required"}, status_code=403
                 )

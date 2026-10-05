@@ -215,4 +215,7 @@ Each refused request leaves exactly one record on the `celine.audit` logger
 The caller is named by `sub` and client id only, never email or name, and the claims of
 a token that failed verification are not read. A request with no token at all on an
 unguarded route (`401 Missing authentication token`) is not recorded: there is no caller.
-The middleware runs before routing, so its records carry the method and no route.
+The middleware runs before routing; its records carry the method and the template of the
+route the router will match (`/api/commitments/{commitment_id}/settle`), resolved from the
+app's routes by path and method, never the raw path, which carries commitment ids. A
+refused path no route serves records `route: null`.

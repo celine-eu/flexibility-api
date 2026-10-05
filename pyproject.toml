@@ -22,6 +22,8 @@ dependencies = [
   # TODO(audit): main.py, security/auth.py and security/middleware.py import
   # celine.sdk.audit and celine.sdk.posture.docs_urls, not in a released celine-sdk yet.
   # Raise this floor to the first release that ships them.
+  # TODO(audit-route): security/middleware.py passes route= to audit_denied, first
+  # accepted in celine-sdk after cbc741b (unreleased). Raise the floor on release.
   "celine-sdk>=1.20.0",
 ]
 

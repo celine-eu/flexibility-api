@@ -173,6 +173,47 @@ async def test_the_service_dependency_records_its_own_refusal(jwt, caplog):
 
 
 # @verifies REQ-0057
+@pytest.mark.parametrize(
+    ("method", "path", "route"),
+    [
+        ("GET", "/api/commitments/pending", "/api/commitments/pending"),
+        ("GET", "/api/commitments/export", "/api/commitments/export"),
+        (
+            "PATCH",
+            "/api/commitments/00000000-0000-0000-0000-000000000001/settle",
+            "/api/commitments/{commitment_id}/settle",
+        ),
+    ],
+)
+async def test_a_middleware_refusal_names_the_route_template_not_the_path(
+    client, alice, caplog, method, path, route
+):
+    """`/pending` also matches `DELETE /{commitment_id}` by path; the GET route wins."""
+    with caplog.at_level(logging.INFO, logger="celine.audit"):
+        response = await client.request(method, path, json={}, headers=alice)
+
+    assert response.status_code == 403
+    [record] = denials(caplog)
+    assert record["method"] == method
+    assert record["route"] == route
+    assert "00000000-0000-0000-0000-000000000001" not in json.dumps(record)
+
+
+# @verifies REQ-0057
+async def test_a_middleware_refusal_on_a_path_no_route_serves_names_no_route(
+    client, alice, caplog
+):
+    with caplog.at_level(logging.INFO, logger="celine.audit"):
+        response = await client.get("/api/ex-00001/pending", headers=alice)
+
+    assert response.status_code == 403
+    [record] = denials(caplog)
+    assert record["action"] == "flexibility.commitments.pending"
+    assert record["method"] == "GET"
+    assert record["route"] is None
+
+
+# @verifies REQ-0057
 async def test_an_admitted_service_records_no_refusal(client, service, caplog):
     with caplog.at_level(logging.INFO, logger="celine.audit"):
         response = await client.get("/api/commitments/pending", headers=service)
