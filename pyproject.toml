@@ -24,7 +24,7 @@ dependencies = [
   # Raise this floor to the first release that ships them.
   # TODO(audit-route): security/middleware.py passes route= to audit_denied, first
   # accepted in celine-sdk after cbc741b (unreleased). Raise the floor on release.
-  "celine-sdk>=1.20.0",
+  "celine-sdk>=2.0.0",
 ]
 
 [tool.uv]
