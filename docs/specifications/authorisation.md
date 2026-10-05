@@ -200,3 +200,19 @@ Before 2026-10-03 the input carried `groups` built with `celine.sdk.auth.extract
 the realm groups merged with every organisation's groups. The bundle never read it, so
 removing it changes no decision; it removes a list that would have let one community's
 group act as another's, or as the platform's, the day a rule did read it.
+
+### REQ-0057 — every refusal is recorded with the caller it refused
+
+Each refused request leaves exactly one record on the `celine.audit` logger
+(`celine.sdk.audit.audit_denied`, `WARNING`, one JSON line, `event: "denied"`):
+
+| refusal | `action` | `sub` / `client_id` | `reason` |
+|---|---|---|---|
+| a presented token that does not verify (`401`) | `flexibility.authenticate` | `null` | `token_expired`, `token_invalid`, `token_unverified` |
+| `PolicyMiddleware` on `/pending`, `PATCH …/settle`, `/export` (`403`) | `flexibility.commitments.pending` / `.settle` / `.export` | the verified caller, `null` when there was none | the decision's reason (`unauthenticated`, `not-a-service-account`, the bundle's) |
+| `ServiceDep` behind the middleware (`403`) | `flexibility.service` | the verified caller | `not-a-service-account` |
+
+The caller is named by `sub` and client id only, never email or name, and the claims of
+a token that failed verification are not read. A request with no token at all on an
+unguarded route (`401 Missing authentication token`) is not recorded: there is no caller.
+The middleware runs before routing, so its records carry the method and no route.

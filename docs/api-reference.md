@@ -1,6 +1,6 @@
 # API Reference
 
-Interactive OpenAPI docs at `http://localhost:8017/docs`.
+Interactive OpenAPI docs at `http://localhost:8017/docs` (under `CELINE_ENV=dev`, or with `CELINE_PUBLIC_DOCS=true`).
 
 This page describes the shapes. **What each route must do** is
 [`docs/specifications/`](specifications/index.md), where every rule carries a `REQ-####`

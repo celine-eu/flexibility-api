@@ -7,7 +7,7 @@ These were **distilled from the code, not written before it** — see
 something `flexibility-api` does today and something a reader would want to stay true;
 none is an aspiration.
 
-**All fifty-six are satisfied.** Two were not when they were first written — writing the
+**All fifty-seven are satisfied.** Two were not when they were first written — writing the
 sentence out is what exposed the defect in each case — and both were fixed the same week:
 
 | | | |
@@ -49,7 +49,7 @@ same change.
 | | |
 |---|---|
 | REQ-0001 – REQ-0004 | [identity](identity.md) — who the caller is |
-| REQ-0005 – REQ-0014, REQ-0054, REQ-0056 | [authorisation](authorisation.md) — what they may do |
+| REQ-0005 – REQ-0014, REQ-0054, REQ-0056, REQ-0057 | [authorisation](authorisation.md) — what they may do |
 | REQ-0015 – REQ-0018 | [windows](windows.md) — how a community surplus becomes an offer |
 | REQ-0019 – REQ-0028 | [commitments](commitments.md) — the record of a decision |
 | REQ-0029 – REQ-0037 | [suggestions](suggestions.md) — what a participant is shown, and accepting |

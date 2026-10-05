@@ -37,6 +37,10 @@ correct for the client and unhelpful for an operator.
 `/health`, `/docs`, `/redoc` and `/openapi.json` pass `PolicyMiddleware` unauthenticated.
 The liveness probe has no token to present.
 
+The documentation is mounted only under `CELINE_ENV=dev`, or when `CELINE_PUBLIC_DOCS=true`
+(`celine.sdk.posture.docs_urls`). Anywhere else `/docs`, `/redoc` and `/openapi.json` are
+`404`; `/health` is unaffected.
+
 `/health` returns `{"status": "ok"}` unconditionally. **It does not check the database,
 the broker, or whether the policy bundle loaded** — a process that is up but has lost
 every one of its dependencies reports healthy. That is deliberate for a liveness probe

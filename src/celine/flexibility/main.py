@@ -4,6 +4,8 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from celine.sdk.audit import configure_audit
+from celine.sdk.posture import docs_urls
 from fastapi import FastAPI
 
 from celine.flexibility.core.config import settings
@@ -18,6 +20,7 @@ from celine.flexibility.services.pipeline_listener import (
 
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
+configure_audit("flexibility-api")
 
 
 @asynccontextmanager
@@ -61,6 +64,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Commitment store for voluntary and automated load-shifting.",
         lifespan=lifespan,
+        # Outside CELINE_ENV=dev no /docs, /redoc or /openapi.json unless
+        # CELINE_PUBLIC_DOCS=true (REQ-0004).
+        **docs_urls(),
     )
     app.add_middleware(PolicyMiddleware)
     register_routes(app)

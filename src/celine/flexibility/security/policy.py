@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +85,9 @@ def subject_document(user: JwtUser, *, is_service: bool | None = None) -> dict[s
 class Decision:
     allowed: bool
     reason: str | None = None
+    # The verified caller the decision was made about, ``None`` when there was none.
+    # Carried so that whoever refuses the request can record who was refused.
+    caller: JwtUser | None = None
 
 
 class AccessPolicy:
@@ -165,10 +168,10 @@ class AccessPolicy:
 
     async def allow_user_commitment(self, request: Request, user_id: str, action: str) -> Decision:
         """Check if the caller may read/write a commitment belonging to user_id."""
-        from celine.flexibility.security.auth import get_user_from_request
+        from celine.flexibility.security.auth import verify_request
 
         try:
-            user: JwtUser = get_user_from_request(request)
+            user: JwtUser = verify_request(request)
         except Exception:
             return Decision(False, "unauthenticated")
 
@@ -180,23 +183,23 @@ class AccessPolicy:
             },
             "subject": subject_document(user),
         }
-        return await self._evaluate(input_data)
+        return replace(await self._evaluate(input_data), caller=user)
 
     async def allow_service(self, request: Request, action: str) -> Decision:
         """Check if the caller is a service account with adequate scope."""
-        from celine.flexibility.security.auth import get_user_from_request
+        from celine.flexibility.security.auth import verify_request
 
         try:
-            user: JwtUser = get_user_from_request(request)
+            user: JwtUser = verify_request(request)
         except Exception:
             return Decision(False, "unauthenticated")
 
         if not user.is_service_account:
-            return Decision(False, "not-a-service-account")
+            return Decision(False, "not-a-service-account", user)
 
         input_data = {
             "action": {"name": action},
             "resource": {"type": "flexibility.commitment"},
             "subject": subject_document(user, is_service=True),
         }
-        return await self._evaluate(input_data)
+        return replace(await self._evaluate(input_data), caller=user)
