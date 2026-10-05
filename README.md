@@ -53,8 +53,7 @@ raises denies instead of allowing. See REQ-0011 and REQ-0055.
   that way is hardened.
 - The check reads the real process environment, not `.env` via pydantic.
 
-This needs `celine.sdk.posture`, which is **not yet in a released celine-sdk** — the
-next release after 1.24.0. Until then it works only against an editable SDK checkout.
+This needs `celine.sdk.posture`, first released in celine-sdk 2.0.0.
 
 | Variable | Default | Description |
 |---|---|---|

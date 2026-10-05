@@ -15,15 +15,11 @@ dependencies = [
   "python-dotenv>=1.0",
   "PyJWT[crypto]>=2.14",
   "httpx>=0.28.0",
-  # TODO(posture): celine.sdk.posture (security/posture.py, security/policy.py) is not in
-  # a released celine-sdk yet. Raise this floor to the first release that ships it.
-  # TODO(platform-admin): security/policy.py imports celine.sdk.auth.realm_roles, first
-  # shipped in celine-sdk 2.0.0 (unreleased). Raise to >=2.0.0 and re-lock on release.
-  # TODO(audit): main.py, security/auth.py and security/middleware.py import
-  # celine.sdk.audit and celine.sdk.posture.docs_urls, not in a released celine-sdk yet.
-  # Raise this floor to the first release that ships them.
-  # TODO(audit-route): security/middleware.py passes route= to audit_denied, first
-  # accepted in celine-sdk after cbc741b (unreleased). Raise the floor on release.
+  # 2.0.0 is the first release with what this service imports: celine.sdk.posture
+  # (security/posture.py, security/policy.py; docs_urls in main.py),
+  # celine.sdk.auth.realm_roles (security/policy.py), celine.sdk.audit (main.py,
+  # security/auth.py, security/middleware.py) and audit_denied(route=)
+  # (security/middleware.py).
   "celine-sdk>=2.0.0",
 ]
 
