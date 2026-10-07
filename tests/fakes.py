@@ -143,17 +143,18 @@ class FetchResult:
 class FakeCommunities:
     """The `dt.communities` namespace — only `fetch_values` is reached.
 
-    Responses are keyed by `fetcher_id`. A response that is an exception instance is
-    raised, which is how the "DT is down" branch of settlement and opportunity nudging
-    is exercised.
+    Responses are keyed by `fetcher_id`, or by `(community_id, fetcher_id)` for one
+    community's answer, which wins over the fetcher's. A response that is an exception
+    instance is raised, which is how the "DT is down" branch of settlement and
+    opportunity nudging is exercised.
     """
 
     def __init__(self) -> None:
-        self.responses: dict[str, Any] = {}
+        self.responses: dict[Any, Any] = {}
         self.calls: list[dict[str, Any]] = []
 
-    def set(self, fetcher_id: str, value: Any) -> None:
-        self.responses[fetcher_id] = value
+    def set(self, fetcher_id: str, value: Any, *, community_id: str | None = None) -> None:
+        self.responses[(community_id, fetcher_id) if community_id else fetcher_id] = value
 
     async def fetch_values(
         self, *, community_id: str, fetcher_id: str, payload: dict | None = None
@@ -161,7 +162,9 @@ class FakeCommunities:
         self.calls.append(
             {"community_id": community_id, "fetcher_id": fetcher_id, "payload": payload}
         )
-        value = self.responses.get(fetcher_id, FetchResult([]))
+        value = self.responses.get(
+            (community_id, fetcher_id), self.responses.get(fetcher_id, FetchResult([]))
+        )
         if isinstance(value, BaseException):
             raise value
         if callable(value):
@@ -267,18 +270,54 @@ class Member:
         self.community_key = community_key
 
 
-class FakeRegistryClient:
-    """Stands in for `RecRegistryAdminClient` — only `list_members` is reached."""
+class Page:
+    """A detailed registry response: `parsed` is the page, `None` on a non-200."""
 
-    def __init__(self, members: Any = None) -> None:
-        self.members: Any = [] if members is None else members
+    def __init__(self, items: list | None, next_cursor: str | None = None, status_code: int = 200):
+        self.status_code = status_code
+        self.parsed = (
+            None if items is None
+            else type("P", (), {"items": items, "next_cursor": next_cursor})()
+        )
+
+
+class FakeRegistryClient:
+    """Stands in for `RecRegistryAdminClient` — `list_communities` and `list_members`.
+
+    `members` is a list (every member in the community `example-rec`), a dict of
+    community key → members, or an exception to raise on any list. Communities are
+    those the dict names, else `example-rec`. Each list answers in pages of
+    `page_size`, so the caller's pagination is exercised.
+    """
+
+    def __init__(self, members: Any = None, *, page_size: int = 1) -> None:
+        if isinstance(members, dict) or isinstance(members, BaseException):
+            self.members: Any = members
+        else:
+            self.members = {"example-rec": [] if members is None else members}
+        self.page_size = page_size
         self.calls: list[str] = []
 
-    async def list_members(self, community_id: str) -> Any:
-        self.calls.append(community_id)
+    def _page(self, items: list, cursor: str | None) -> Page:
+        start = int(cursor or 0)
+        end = start + self.page_size
+        return Page(items[start:end], str(end) if end < len(items) else None)
+
+    async def list_communities(self, *, limit: int = 50, cursor: str | None = None) -> Any:
+        self.calls.append("communities")
         if isinstance(self.members, BaseException):
             raise self.members
-        return self.members
+        keys = [type("C", (), {"key": k})() for k in self.members]
+        return self._page(keys, cursor)
+
+    async def list_members(
+        self, community_key: str, *, limit: int = 50, cursor: str | None = None
+    ) -> Any:
+        self.calls.append(community_key)
+        found = self.members.get(community_key)
+        if isinstance(found, BaseException):
+            raise found
+        return self._page(found or [], cursor)
 
 
 # ---------------------------------------------------------------------------

@@ -88,7 +88,12 @@ to absorb it. A window must span at least an hour, which a single row already do
 A forecast row missing its timestamp or its prediction, or carrying a string where a
 number belongs, is skipped — it costs that hour, not the notification.
 
-### REQ-0049 — the earliest window is broadcast to every member
+### REQ-0049 — each community's earliest window is broadcast to its members
+
+Every community the registry lists is handled on its own: its own `rec_forecast` (the
+digital twin restricts it to that community), its own windows, its own members, and that
+community's key in each nudge. One community's surplus is never announced to another's
+members. Every page of the registry's community and member lists is read.
 
 `windows[0]` — the earliest, not the largest. One opportunity per forecast run, whatever
 else the day holds; a bigger surplus later is never mentioned.
@@ -102,11 +107,11 @@ when the participant opens the suggestion list.
 
 ### REQ-0050 — every failure on this path is silent
 
-A forecast fetch that raises, an empty forecast, a registry lookup that fails: nobody is
-notified and nothing is reported. One rejected nudge costs that member and the broadcast
-continues.
+A community list the registry does not answer: nobody is notified and nothing is
+reported. Within one community, a forecast fetch that raises, an empty forecast or a member
+list that fails costs that community only; the others are still handled. One rejected
+nudge costs that member and the broadcast continues.
 
-**The community is hard-coded.** Both the forecast fetch and the member list name
-`it-energy-community` literally, so a second community would be silently ignored — no
-error, no nudge, nothing to notice. Unlike the read path, which resolves the community
-from the caller's profile, this one cannot.
+Until 2026-10 both calls named the digital twin's domain, `it-energy-community`, as the
+community: once the twin restricted each read to the community in the URL, that read no
+rows, and the member list never parsed, so no nudge was sent.

@@ -101,7 +101,7 @@ rejected. A **service** token writes the `user_id` given (REQ-0019, REQ-0020).
   "user_id": "user-alice",
   "suggestion_id": "0e0f…",
   "suggestion_type": "shift-consumption",
-  "community_id": "it-energy-community",
+  "community_id": "example-rec",
   "device_id": "sensor-alice-1",
   "period_start": "2026-07-02T09:00:00+00:00",
   "period_end": "2026-07-02T12:00:00+00:00",

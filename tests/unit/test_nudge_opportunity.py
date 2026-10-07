@@ -26,7 +26,8 @@ from tests.fakes import (
     Member,
 )
 
-COMMUNITY = "it-energy-community"
+COMMUNITY = "example-rec"
+OTHER = "other-rec"
 
 
 def hours(*pairs: tuple[int, float]) -> list[dict]:
@@ -269,15 +270,49 @@ async def test_one_rejected_nudge_does_not_stop_the_broadcast(dt, nudging):
     assert [p["user_id"] for p in nudging.payloads()] == ["user-b"]
 
 
-# @verifies REQ-0050
-async def test_the_community_is_hard_coded(dt, nudging):
+# @verifies REQ-0049
+async def test_each_community_gets_its_own_forecast_and_its_own_members(dt, nudging):
     """
-    Both the forecast fetch and the member list name `it-energy-community` literally.
-    A second community would be silently ignored: no error, no nudge, nothing to notice.
+    Every community the registry lists is handled on its own: the forecast fetched for
+    it, its members, and the community named in each nudge. One community's surplus is
+    never announced to another's members.
     """
-    await notify_flexibility_opportunity(
-        dt, (registry := FakeRegistryClient([Member("user-a")])), nudging
+    noon = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    dt.communities.set(
+        "rec_forecast",
+        FetchResult([{"datetime": noon.isoformat(), "prediction": 7.0}]),
+        community_id=OTHER,
+    )
+    registry = FakeRegistryClient(
+        {COMMUNITY: [Member("user-a"), Member("user-b")], OTHER: [Member("user-c")]}
     )
 
-    assert dt.communities.calls[0]["community_id"] == COMMUNITY
-    assert registry.calls == [COMMUNITY]
+    await notify_flexibility_opportunity(dt, registry, nudging)
+
+    assert [c["community_id"] for c in dt.communities.calls] == [COMMUNITY, OTHER]
+    sent = [(p["user_id"], p["community_id"], p["facts"]["estimated_kwh"]) for p in nudging.payloads()]
+    assert sent == [("user-a", COMMUNITY, "5.0"), ("user-b", COMMUNITY, "5.0"), ("user-c", OTHER, "7.0")]
+
+
+# @verifies REQ-0050
+async def test_a_failure_in_one_community_does_not_stop_the_others(dt, nudging):
+    dt.communities.set("rec_forecast", RuntimeError("no forecast"), community_id=COMMUNITY)
+    registry = FakeRegistryClient(
+        {COMMUNITY: [Member("user-a")], OTHER: RuntimeError("registry down"), "third-rec": [Member("user-c")]}
+    )
+
+    await notify_flexibility_opportunity(dt, registry, nudging)
+
+    assert [(p["user_id"], p["community_id"]) for p in nudging.payloads()] == [("user-c", "third-rec")]
+
+
+# @verifies REQ-0049
+async def test_every_page_of_the_registry_is_read(dt, nudging):
+    registry = FakeRegistryClient(
+        {COMMUNITY: [Member(f"user-{n}") for n in range(3)], OTHER: [Member("user-x")]},
+        page_size=2,
+    )
+
+    await notify_flexibility_opportunity(dt, registry, nudging)
+
+    assert [p["user_id"] for p in nudging.payloads()] == ["user-0", "user-1", "user-2", "user-x"]
