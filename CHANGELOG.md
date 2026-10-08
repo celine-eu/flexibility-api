@@ -2,6 +2,36 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-10-08)
+
+### Bug Fixes
+
+- Opportunity nudges are sent per registry community, with its own forecast and members
+  ([`18a3641`](https://github.com/celine-eu/flexibility-api/commit/18a3641ee2c5ab74cfd65ef2387c181a96b38992))
+
+- Package policies in the wheel, scope /export, configurable oidc client
+  ([`487a877`](https://github.com/celine-eu/flexibility-api/commit/487a877347243b8600c9a3d31a7a5c1cb6667199))
+
+### Chores
+
+- Drop the celine-sdk release TODOs now that 2.0.0 ships them
+  ([`23b7dd9`](https://github.com/celine-eu/flexibility-api/commit/23b7dd907a15737d2ffb356ea28bff4f8767ca53))
+
+- Upgrade celine-sdk to 2.0.0
+  ([`bac5d59`](https://github.com/celine-eu/flexibility-api/commit/bac5d59d9d9a332b4dc6a6830dd487a1bf1deb92))
+
+- Upgrade sdk
+  ([`771cff6`](https://github.com/celine-eu/flexibility-api/commit/771cff6f2fb13fd6df995c3d8c878690f1c1c450))
+
+### Features
+
+- Name the route template on refusals recorded by the policy middleware
+  ([`62cf726`](https://github.com/celine-eu/flexibility-api/commit/62cf72621cf54eab7a0b94bbb7dfe1b8f2cdeae9))
+
+- Record every refusal with the caller on celine.audit, serve API docs only in dev
+  ([`761aa97`](https://github.com/celine-eu/flexibility-api/commit/761aa9752ec5c25ed382eed92ed5b3c3a404f6a1))
+
+
 ## v1.4.2 (2026-09-08)
 
 ### Bug Fixes
