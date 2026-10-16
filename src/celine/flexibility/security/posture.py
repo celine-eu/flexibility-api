@@ -46,7 +46,7 @@ def build_guard(
             f"no policy bundle loaded from {policies_dir()} — outside dev every "
             "authorisation decision would be a denial",
             "Install the wheel (it carries policies/), or point "
-            "CELINE_POLICIES_POLICIES_DIR at the bundle.",
+            "CELINE_POLICIES_DIR at the bundle.",
         )
     return guard
 

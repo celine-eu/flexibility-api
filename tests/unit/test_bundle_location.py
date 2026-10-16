@@ -22,6 +22,7 @@ BUNDLE = REPO / "policies" / "flexibility.rego"
 
 @pytest.fixture
 def no_override(monkeypatch):
+    monkeypatch.delenv("CELINE_POLICIES_DIR", raising=False)
     monkeypatch.delenv("CELINE_POLICIES_POLICIES_DIR", raising=False)
 
 
@@ -73,9 +74,26 @@ def test_a_source_checkout_loads_the_repository_bundle(tmp_path, monkeypatch, no
 
 
 # @verifies REQ-0011
-def test_a_configured_directory_wins(tmp_path, monkeypatch):
+def test_a_configured_directory_wins(tmp_path, monkeypatch, no_override):
+    mounted = _bundle_in(tmp_path / "mounted")
+    monkeypatch.setenv("CELINE_POLICIES_DIR", str(mounted))
+
+    assert policies_dir() == mounted
+    assert AccessPolicy().loaded
+
+
+# @verifies REQ-0011
+def test_the_doubled_spelling_is_still_read(tmp_path, monkeypatch, no_override):
     mounted = _bundle_in(tmp_path / "mounted")
     monkeypatch.setenv("CELINE_POLICIES_POLICIES_DIR", str(mounted))
 
     assert policies_dir() == mounted
-    assert AccessPolicy().loaded
+
+
+# @verifies REQ-0011
+def test_the_short_spelling_wins_over_the_doubled_one(tmp_path, monkeypatch, no_override):
+    short = _bundle_in(tmp_path / "short")
+    monkeypatch.setenv("CELINE_POLICIES_DIR", str(short))
+    monkeypatch.setenv("CELINE_POLICIES_POLICIES_DIR", str(tmp_path / "doubled"))
+
+    assert policies_dir() == short

@@ -40,7 +40,8 @@ from fastapi import Request
 logger = logging.getLogger(__name__)
 
 # Where the bundle is, first match wins. Never the working directory (REQ-0011):
-#   1. CELINE_POLICIES_POLICIES_DIR, when a deployment mounts its own bundle;
+#   1. CELINE_POLICIES_DIR, when a deployment mounts its own bundle — or, when that is
+#      unset, the doubled CELINE_POLICIES_POLICIES_DIR celine-sdk read until 2026-10-15;
 #   2. the copy packaged into the wheel (`force-include` in pyproject.toml) — what an
 #      installed service, the image, has;
 #   3. the repository's `policies/`, for a source checkout (editable install, tests).
@@ -52,9 +53,10 @@ _CHECKOUT_POLICIES = Path(__file__).resolve().parents[4] / "policies"
 
 def policies_dir() -> Path:
     """The bundle directory this process loads (see the order above)."""
-    configured = os.environ.get("CELINE_POLICIES_POLICIES_DIR", "").strip()
-    if configured:
-        return Path(configured)
+    for name in ("CELINE_POLICIES_DIR", "CELINE_POLICIES_POLICIES_DIR"):
+        configured = os.environ.get(name, "").strip()
+        if configured:
+            return Path(configured)
     if _PACKAGED_POLICIES.is_dir():
         return _PACKAGED_POLICIES
     return _CHECKOUT_POLICIES
