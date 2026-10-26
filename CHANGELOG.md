@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.6.0 (2026-10-26)
+
+### Bug Fixes
+
+- **suggestions**: Refuse an accept that has no meter or community
+  ([`15b9891`](https://github.com/celine-eu/flexibility-api/commit/15b989174eb66733313b5144f6920c9180a5a7c7))
+
+### Features
+
+- Normalize CELINE_POICIES* use
+  ([`e44cfcb`](https://github.com/celine-eu/flexibility-api/commit/e44cfcb791ebbcd018e26482ebd3c9ec648e3e3a))
+
+
 ## v1.5.0 (2026-10-08)
 
 ### Bug Fixes
