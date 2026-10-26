@@ -62,8 +62,9 @@ entity resolution. Access is enforced downstream by dataset-api, on the
 
 ### REQ-0041 — a commitment with no community or no device is skipped
 
-Both columns are nullable and both are resolved best-effort at accept time (REQ-0034), so
-a commitment can legitimately reach settlement without one.
+Both columns are nullable. An accept through the suggestion route refuses to write a row
+without both (REQ-0034), but `POST /api/commitments` does not check, and rows written
+before 2026-10-26 may lack either — so a commitment can still reach settlement without one.
 
 It stays `committed` **forever**. There is nothing to fetch a reading against and no
 retry that would ever succeed, and nothing raises an alarm about it.

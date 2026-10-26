@@ -60,7 +60,7 @@ are **null when not known** — never 0 (REQ-0015).
 
 Record the participant's answer. Accepting creates a commitment, publishes to MQTT and
 schedules a pre-window reminder; the last two are fire-and-forget and never fail the
-response.
+response. An accept that cannot be settled is refused with a `409` or `503` (below).
 
 **Request:**
 ```json
@@ -84,6 +84,21 @@ become **now to now + 1 hour** rather than a `400` (REQ-0033).
 A decline returns `commitment_id: null`, `status: "declined"` and
 `reward_points_estimated: 0` — while storing a `rejected` row that keeps the estimate that
 was sent (REQ-0035).
+
+**Errors (accept only).** An accept that could never be settled is refused before anything
+is stored, published or scheduled (REQ-0034). `detail` is an object:
+
+```json
+{ "detail": { "code": "no_meter", "message": "No meter is registered for your account, …" } }
+```
+
+| Status | `code` | When |
+|---|---|---|
+| `503` | `dt_unavailable` | the Digital Twin profile or assets call failed — retryable |
+| `409` | `not_a_member` | the caller has no community membership |
+| `409` | `no_meter` | no asset of the caller carries a `sensor_id` |
+
+`message` is English and meant for display; clients branch on `code`.
 
 ---
 

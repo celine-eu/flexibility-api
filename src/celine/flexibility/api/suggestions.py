@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from celine.sdk.auth.static import StaticTokenProvider
@@ -301,7 +301,11 @@ async def respond_to_suggestion(
     """Record a user's response to a flexibility suggestion.
 
     On acceptance:
-      1. Resolves community_id and device_id via DTClient.
+      1. Resolves community_id and device_id via DTClient. If either cannot be
+         resolved the accept is refused and nothing is persisted, published or
+         scheduled: ``503 dt_unavailable`` when a DT call raises, ``409
+         not_a_member`` when there is no community membership, ``409 no_meter``
+         when no asset carries a ``sensor_id``.
       2. Creates a FlexibilityCommitment record in the DB.
       3. Publishes flexibility.committed to MQTT.
 
@@ -339,29 +343,10 @@ async def respond_to_suggestion(
             reward_points_estimated=0,
         )
 
-    # Resolve community_id and device_id for the commitment record and MQTT payload
+    # Resolve community_id and device_id before anything is persisted: a row missing
+    # either can never be settled (REQ-0034, REQ-0041), so the accept is refused instead.
     dt = _get_dt_client(get_raw_token(request))
-    community_id = ""
-    device_id = ""
-
-    try:
-        from celine.sdk.openapi.dt.models import UserMembershipSchema
-        participant = await dt.participants.profile(user.sub)
-        _m = participant.membership
-        if isinstance(_m, UserMembershipSchema):
-            community_id = _m.community.key
-    except Exception as exc:
-        logger.warning("Failed to fetch participant profile for user=%s: %s", user.sub, exc)
-
-    try:
-        assets = await dt.participants.assets(user.sub)
-        if assets and assets.items:
-            for asset in assets.items:
-                if asset.sensor_id:
-                    device_id = asset.sensor_id
-                    break
-    except Exception as exc:
-        logger.warning("Failed to fetch assets for user=%s: %s", user.sub, exc)
+    community_id, device_id = await _resolve_settlement_target(dt, user.sub)
 
     # Persist the commitment
     commitment_row = FlexibilityCommitment(
@@ -408,6 +393,88 @@ async def respond_to_suggestion(
         status="committed",
         reward_points_estimated=commitment_row.reward_points_estimated,
     )
+
+
+def _refuse(status_code: int, code: str, message: str, user_sub: str) -> HTTPException:
+    """Log a refused accept and build the error the route raises.
+
+    Args:
+        status_code: HTTP status of the refusal (``409`` or ``503``).
+        code: Machine-readable reason, returned as ``detail.code``.
+        message: Human-readable English reason, returned as ``detail.message``.
+        user_sub: The caller's subject, for the log line only.
+
+    Returns:
+        The ``HTTPException`` carrying ``{"code": ..., "message": ...}`` as its detail.
+    """
+    logger.warning("Refusing accept for user=%s: %s (%s)", user_sub, code, message)
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+async def _resolve_settlement_target(dt: DTClient, user_sub: str) -> tuple[str, str]:
+    """Resolve the community and metered device a commitment will be settled against.
+
+    Membership is checked before the asset lookup, so a non-member is told
+    ``not_a_member`` without a second Digital Twin round trip.
+
+    Args:
+        dt: Digital Twin client built from the caller's own token.
+        user_sub: The caller's subject, used as the DT participant id.
+
+    Returns:
+        ``(community_id, device_id)``, both non-empty.
+
+    Raises:
+        HTTPException: ``503`` with code ``dt_unavailable`` if the profile or the
+            assets call raises; ``409`` with code ``not_a_member`` if the profile has
+            no community membership; ``409`` with code ``no_meter`` if no asset
+            carries a ``sensor_id``.
+    """
+    from celine.sdk.openapi.dt.models import UserMembershipSchema
+
+    try:
+        participant = await dt.participants.profile(user_sub)
+    except Exception as exc:
+        logger.warning("Failed to fetch participant profile for user=%s: %s", user_sub, exc)
+        raise _refuse(
+            503, "dt_unavailable",
+            "The digital twin is unavailable; the commitment was not recorded. Try again later.",
+            user_sub,
+        ) from exc
+
+    membership = getattr(participant, "membership", None)
+    community_id = (
+        membership.community.key if isinstance(membership, UserMembershipSchema) else ""
+    )
+    if not community_id:
+        raise _refuse(
+            409, "not_a_member",
+            "You are not a member of an energy community, so a commitment cannot be recorded.",
+            user_sub,
+        )
+
+    try:
+        assets = await dt.participants.assets(user_sub)
+    except Exception as exc:
+        logger.warning("Failed to fetch assets for user=%s: %s", user_sub, exc)
+        raise _refuse(
+            503, "dt_unavailable",
+            "The digital twin is unavailable; the commitment was not recorded. Try again later.",
+            user_sub,
+        ) from exc
+
+    device_id = next(
+        (a.sensor_id for a in (assets.items if assets and assets.items else []) if a.sensor_id),
+        "",
+    )
+    if not device_id:
+        raise _refuse(
+            409, "no_meter",
+            "No meter is registered for your account, so a commitment cannot be recorded.",
+            user_sub,
+        )
+
+    return community_id, device_id
 
 
 async def _publish_committed(

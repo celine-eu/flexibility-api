@@ -73,9 +73,10 @@ Status is `committed`, `settled`, `rejected` or `cancelled`. Only `committed` is
 other three are terminal. `rejected` is a **decline** — declines are kept so the
 acceptance rate is computable.
 
-`community_id` and `device_id` are nullable, and both are resolved best-effort when the
-commitment is created. A row missing either can never be settled, and nothing reports that
-(REQ-0034, REQ-0041).
+`community_id` and `device_id` are nullable. An accept through the suggestion route is
+refused rather than written without both (REQ-0034); `POST /api/commitments` and a
+decline still write rows without them. A `committed` row missing either can never be
+settled, and nothing reports that (REQ-0041).
 
 Alembic manages migrations. **No test runs against them** — the suite builds its schema
 from the models, so a model that has drifted from its migrations passes everything

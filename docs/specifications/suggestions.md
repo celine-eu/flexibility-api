@@ -59,15 +59,26 @@ Two defaults worth knowing:
   choose, and settlement will later fetch readings for that hour. A client bug here
   produces a plausible wrong settlement rather than a visible failure.
 
-### REQ-0034 — a commitment is recorded even when nothing can be resolved
+### REQ-0034 — an accept that could never be settled is refused
 
-If the profile and asset lookups both fail, the row is still written, with
-`community_id` and `device_id` null and status `committed`.
+An accept resolves the caller's community and metered device before anything else. If
+either cannot be resolved, **nothing is written, published or scheduled**, a warning is
+logged, and the response is an error whose `detail` is `{"code": …, "message": …}`:
 
-The participant's decision is the thing of value and it is kept whatever the Digital Twin
-says. What it costs is settlement: a row with no community or no device is skipped
-forever by `settle_completed_windows` (REQ-0041), so **this commitment can never be paid
-out**, and nothing anywhere reports that.
+| Condition | Status | `code` |
+|---|---|---|
+| the profile or the assets call raises | `503` | `dt_unavailable` |
+| the calls succeed, the profile has no community membership | `409` | `not_a_member` |
+| the calls succeed, no asset carries a `sensor_id` | `409` | `no_meter` |
+
+Membership is checked first, so a participant with neither is told `not_a_member`, and an
+assets outage for a non-member also reads as `not_a_member`.
+
+Until 2026-10-26 the opposite held: the row was written with `community_id` or
+`device_id` null, and settlement skipped it forever (REQ-0041). On staging, 2026-10-21, a
+member with no registry assets accepted — the Digital Twin answered `200` with an empty
+asset list — and the row could never be paid out. A refusal is the only point at which
+the participant can still be told.
 
 ### REQ-0035 — a decline is recorded and awards nothing
 

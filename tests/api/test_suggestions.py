@@ -2,8 +2,8 @@
 
 `_build_suggestions` is pure and is tested on its own in `tests/unit/`. What is tested
 here is everything around it: the two Digital Twin calls, the degradation when either
-fails, and the four side effects of an accept — the row, the MQTT publish, the scheduled
-nudge, and the response.
+fails, the refusal of an accept that could never be settled, and the four side effects of
+an accept — the row, the MQTT publish, the scheduled nudge, and the response.
 
 `_get_dt_client` builds a real `DTClient` **inside the request**, from the caller's own
 token, so there is no dependency to override. It is monkeypatched instead, which is the
@@ -281,25 +281,106 @@ async def test_an_unparseable_window_becomes_the_next_hour(client, alice, dt, db
     assert stored.period_end - stored.period_start == timedelta(hours=1)
 
 
+@pytest.fixture
+def side_effects(monkeypatch) -> tuple[FakeBroker, list[dict]]:
+    """A connected broker and a recording nudge scheduler, both wired into the route."""
+    broker = FakeBroker()
+    scheduled: list[dict] = []
+
+    async def _schedule(nudging, **kwargs):
+        scheduled.append(kwargs)
+
+    monkeypatch.setattr(module, "get_broker", lambda: broker)
+    monkeypatch.setattr(module, "get_nudging_client", lambda: FakeNudgingClient())
+    monkeypatch.setattr(module, "schedule_pre_window_nudge", _schedule)
+    return broker, scheduled
+
+
+async def assert_nothing_happened(db, side_effects) -> None:
+    broker, scheduled = side_effects
+    assert await commitments(db) == []
+    assert broker.published == []
+    assert scheduled == []
+
+
 # @verifies REQ-0034
-async def test_an_unresolvable_community_still_records_the_commitment(client, alice, dt, db):
+@pytest.mark.parametrize(
+    "assets",
+    [
+        pytest.param(Assets([]), id="no assets at all"),
+        pytest.param(Assets([Asset(None), Asset("")]), id="assets without a sensor"),
+        pytest.param(None, id="no asset list"),
+    ],
+)
+async def test_an_accept_without_a_meter_is_refused(
+    client, alice, dt, db, side_effects, assets
+):
     """
-    The participant's decision is the thing of value and it is kept whatever the Digital
-    Twin says. What it costs is settlement: a row with no `community_id` is skipped
-    forever by `settle_completed_windows`, so this commitment can never be paid out.
+    Staging, 2026-10-21: a member with no registry assets accepted, the Digital Twin
+    answered `200` with an empty list, and the route stored a `committed` row with no
+    device. Settlement skips such a row forever. Refusing it up front is the only point
+    at which the participant can still be told.
     """
-    dt.participants.profile_response = RuntimeError("digital twin unavailable")
-    dt.participants.assets_response = RuntimeError("digital twin unavailable")
+    dt.participants.assets_response = assets
 
     response = await client.post(
         "/api/suggestions/w1/respond", json=respond_body(), headers=alice
     )
 
-    assert response.status_code == 200
-    stored, = await commitments(db)
-    assert stored.community_id is None
-    assert stored.device_id is None
-    assert stored.status == "committed"
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "no_meter"
+    assert response.json()["detail"]["message"]
+    await assert_nothing_happened(db, side_effects)
+
+
+# @verifies REQ-0034
+async def test_an_accept_from_a_non_member_is_refused(client, alice, dt, db, side_effects):
+    """
+    No community means no settlement either. Membership is checked first, so a
+    participant with neither a community nor a meter is told the more basic of the two.
+    """
+    dt.participants.profile_response = make_profile(None)
+    dt.participants.assets_response = Assets([])
+
+    response = await client.post(
+        "/api/suggestions/w1/respond", json=respond_body(), headers=alice
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "not_a_member"
+    assert response.json()["detail"]["message"]
+    await assert_nothing_happened(db, side_effects)
+
+
+# @verifies REQ-0034
+@pytest.mark.parametrize("failing", ["profile_response", "assets_response"])
+async def test_an_accept_during_a_digital_twin_outage_is_unavailable(
+    client, alice, dt, db, side_effects, failing
+):
+    """
+    A `503`, not a `409`: an outage says nothing about whether the participant could be
+    settled, so the client is told to retry rather than that they are ineligible.
+    """
+    setattr(dt.participants, failing, RuntimeError("digital twin unavailable"))
+
+    response = await client.post(
+        "/api/suggestions/w1/respond", json=respond_body(), headers=alice
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "dt_unavailable"
+    assert response.json()["detail"]["message"]
+    await assert_nothing_happened(db, side_effects)
+
+
+# @verifies REQ-0034
+async def test_a_refused_accept_is_logged(client, alice, dt, db, caplog):
+    dt.participants.assets_response = Assets([])
+
+    with caplog.at_level("WARNING", logger=module.logger.name):
+        await client.post("/api/suggestions/w1/respond", json=respond_body(), headers=alice)
+
+    assert any(USER_SUB in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +427,27 @@ async def test_declining_asks_the_digital_twin_nothing(client, alice, dt, db):
     assert dt.participants.calls == []
     stored, = await commitments(db)
     assert stored.community_id is None
+
+
+# @verifies REQ-0035
+async def test_declining_works_for_a_participant_who_could_not_accept(client, alice, dt, db):
+    """
+    The accept-time refusal (REQ-0034) does not reach the decline path: a member with
+    no meter can still say no, and that is still recorded.
+    """
+    dt.participants.profile_response = make_profile(None)
+    dt.participants.assets_response = Assets([])
+
+    response = await client.post(
+        "/api/suggestions/w1/respond",
+        json=respond_body(response="declined"),
+        headers=alice,
+    )
+
+    assert response.status_code == 200
+    stored, = await commitments(db)
+    assert stored.status == "rejected"
+    assert stored.device_id is None
 
 
 # ---------------------------------------------------------------------------
