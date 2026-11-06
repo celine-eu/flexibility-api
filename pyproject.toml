@@ -20,7 +20,7 @@ dependencies = [
   # celine.sdk.auth.realm_roles (security/policy.py), celine.sdk.audit (main.py,
   # security/auth.py, security/middleware.py) and audit_denied(route=)
   # (security/middleware.py).
-  "celine-sdk>=2.0.0",
+  "celine-sdk>=2.2.3",
 ]
 
 [tool.uv]
