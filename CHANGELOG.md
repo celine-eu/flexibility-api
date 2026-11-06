@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.7.1 (2026-11-06)
+
+### Bug Fixes
+
+- **deps**: Celine-sdk>=2.2.3, the MQTT listener outlives a broker restart
+  ([`a9f5bcb`](https://github.com/celine-eu/flexibility-api/commit/a9f5bcb66765f47b2f2564abac5534a2e85e62c4))
+
+
 ## v1.7.0 (2026-11-06)
 
 ### Features
