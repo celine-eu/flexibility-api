@@ -146,3 +146,129 @@ async def settle_completed_windows(
         await session.commit()
 
     return settled
+
+
+# ─── Fair gamification settlement (demo3 spec 2026-10-07, design 2026-10-09) ──────
+
+
+def _iso_utc(value: datetime) -> str:
+    """ISO timestamp with an explicit offset; a naive value is taken as UTC."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def _int(val: object, default: int = 0) -> int:
+    try:
+        return int(round(float(val)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+async def settle_fair_outcomes(
+    session: AsyncSession,
+    dt: DTClient,
+    nudging: object | None,
+    period_date: date,
+) -> int:
+    """Settle open commitments from the pipeline's weekly fair outcomes.
+
+    For every `committed` row whose window closed by the end of `period_date`, the
+    community-domain fetcher `rec_fair_commitment_outcome` is asked for the verdict the
+    rec_flexibility pipeline computed (`rec_fair_commitment_outcomes`): kept → the fixed
+    points plus the true-surplus extra; not kept → 0; no overlapping window → 0 and
+    "not evaluable", never "missed". Outcomes land once a week, so a row with no outcome
+    yet is left `committed` and looked at again on the next run (idempotent, like
+    `settle_completed_windows`).
+
+    Each settled commitment is announced to the member with a `commitment_settled`
+    nudge carrying `kept` and `reason`, when a nudging client is available; a failed
+    nudge never undoes the settlement.
+
+    Returns the count of settled commitments.
+    """
+    period_end = datetime.combine(period_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    rows = (
+        await session.execute(
+            select(FlexibilityCommitment).where(
+                FlexibilityCommitment.status == "committed",
+                FlexibilityCommitment.period_end <= period_end,
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        return 0
+
+    settled = 0
+    announcements: list[tuple[FlexibilityCommitment, dict]] = []
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        community_id = row.community_id or ""
+        device_id = row.device_id or ""
+        if not community_id or not device_id:
+            logger.warning("Commitment %s has no community/device — cannot settle (fair)", row.id)
+            continue
+        try:
+            result = await dt.communities.fetch_values(
+                community_id=community_id,
+                fetcher_id="rec_fair_commitment_outcome",
+                payload={
+                    "device_id": device_id,
+                    "period_start": _iso_utc(row.period_start),
+                    "period_end": _iso_utc(row.period_end),
+                },
+            )
+        except Exception as exc:
+            logger.warning("Failed to fetch rec_fair_commitment_outcome commitment=%s: %s", row.id, exc)
+            continue
+        if not result or result.count == 0:
+            logger.info("No fair outcome yet for commitment=%s — retried on the next run", row.id)
+            continue
+
+        outcome = result.items[0].to_dict()
+        kept = bool(outcome.get("is_kept"))
+        points = _int(outcome.get("points")) + _int(outcome.get("surplus_points"))
+        reason = str(outcome.get("reason") or ("kept" if kept else "not_kept"))
+
+        row.status = "settled"
+        row.reward_points_actual = points
+        row.settled_at = now
+        settled += 1
+        announcements.append(
+            (
+                row,
+                {
+                    "facts_version": "1.0",
+                    "scenario": "commitment_settled",
+                    "commitment_id": str(row.id),
+                    "kept": "true" if kept else "false",
+                    "reason": reason,
+                    "reward_points_actual": str(points),
+                    "actual_kwh": "",
+                    "window_start": row.period_start.strftime("%H:%M"),
+                    "window_end": row.period_end.strftime("%H:%M"),
+                    "period": row.period_start.date().isoformat(),
+                },
+            )
+        )
+        logger.info("Fair-settled commitment=%s device=%s kept=%s reason=%s pts=%d", row.id, device_id, kept, reason, points)
+
+    if settled:
+        await session.commit()
+
+    if nudging is not None:
+        from celine.sdk.openapi.nudging.models import DigitalTwinEvent
+
+        for row, facts in announcements:
+            payload = {
+                "event_type": "commitment_settled",
+                "user_id": row.user_id,
+                "community_id": row.community_id,
+                "facts": facts,
+            }
+            try:
+                await nudging.ingest_event(DigitalTwinEvent.from_dict(payload))  # type: ignore[attr-defined]
+            except Exception as exc:
+                logger.warning("Failed to send commitment_settled to user=%s: %s", row.user_id, exc)
+
+    return settled

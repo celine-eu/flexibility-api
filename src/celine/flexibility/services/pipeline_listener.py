@@ -29,7 +29,7 @@ from celine.flexibility.core.config import settings
 from celine.flexibility.db.session import SessionLocal
 from celine.flexibility.services.nudge_opportunity import notify_flexibility_opportunity
 from celine.flexibility.services.reminders import send_pending_reminders
-from celine.flexibility.services.settlement import settle_completed_windows
+from celine.flexibility.services.settlement import settle_completed_windows, settle_fair_outcomes
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,10 @@ async def settle_through(period_date: date | None = None) -> int:
         period_date = datetime.now(timezone.utc).date() - timedelta(days=1)
 
     async with SessionLocal() as session:
-        count = await settle_completed_windows(session, _dt_client, period_date)
+        if settings.fair_settlement_enabled:
+            count = await settle_fair_outcomes(session, _dt_client, _nudging_client, period_date)
+        else:
+            count = await settle_completed_windows(session, _dt_client, period_date)
     if count:
         logger.info(
             "Settled %d flexibility commitments for period=%s", count, period_date

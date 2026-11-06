@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # message — see services.pipeline_listener.run_settlement_fallback.
     settlement_fallback_seconds: float = 6 * 3600.0
 
+    # Fair gamification (demo3 spec 2026-10-07, design 2026-10-09): when true, commitments
+    # are settled from the pipeline's weekly outcomes (rec_fair_commitment_outcome: fixed
+    # points if kept) instead of kWh × 10, and the member gets a commitment_settled nudge.
+    # Flip together with the webapp's GAMIFICATION_VARIANT=fair at a season start.
+    fair_settlement_enabled: bool = False
+
     # MQTT — driven by CELINE_MQTT_* env vars
     mqtt: MqttSettings = Field(default_factory=MqttSettings)
 
