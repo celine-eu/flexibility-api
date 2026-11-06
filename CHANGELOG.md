@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.7.0 (2026-11-06)
+
+### Features
+
+- Settle fair commitment outcomes behind FAIR_SETTLEMENT_ENABLED
+  ([`98ecc6c`](https://github.com/celine-eu/flexibility-api/commit/98ecc6c706e5561a2da54489cafd902bc532f8dd))
+
+
 ## v1.6.0 (2026-10-26)
 
 ### Bug Fixes
